@@ -1,17 +1,16 @@
 import streamlit as st
 from openai import OpenAI
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import OpenAIEmbeddings
+from utils import load_faiss_vectorstore
+from config import INDEX_PATH
+from utils import build_prompt
+
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # --- Page Setup ---
 st.set_page_config(page_title="Innovim PM Chatbot", page_icon="📘", layout="wide")
 
-# --- Load Vectorstore ---
-embeddings = OpenAIEmbeddings(openai_api_key=st.secrets["OPENAI_API_KEY"])
-vectorstore = FAISS.load_local("faiss_index_hr", embeddings, allow_dangerous_deserialization=True)
-
 # --- OpenAI Client ---
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+vectorstore = load_faiss_vectorstore(INDEX_PATH, st.secrets["OPENAI_API_KEY"])
 
 # --- Initialize Chat History ---
 if "chat_history" not in st.session_state:
@@ -40,33 +39,91 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+#--- Sidebar ---
 # --- Sidebar ---
 with st.sidebar:
-    st.image("innovimvector.png", use_container_width=True)
+    # --- Scoped Sidebar Styles ---
     st.markdown("""
-        <h4 style="margin-top: 1rem;">How to Use</h4>
-        <p style="font-size: 0.92rem; line-height: 1.6;">
-            Ask questions about Innovim’s PM policies.<br>
-            This chatbot is trained on the internal handbook and will respond using relevant sections.
-        </p>
-        <hr style="border: 0.5px solid #444;">
-        <p style="font-size: 0.85rem; font-style: italic; color: #CCCCCC;">
-            For official HR inquiries, please contact HR directly.
-        </p>
-        <div style='text-align: center; font-size: 0.8rem; color: #888; margin-top: 3rem;'>
-            Built by Innovim · Version 1.0
-        </div>
+        <style>
+        .sidebar-center {
+            text-align: center;
+        }
+        .sidebar-footer {
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: gray;
+            text-align: center;
+        }
+        .sidebar-button {
+            display: flex;
+            justify-content: center;
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        </style>
     """, unsafe_allow_html=True)
 
+    st.markdown("<div class='sidebar-center'>", unsafe_allow_html=True)
+
+    # --- Logo ---
+    st.image("innovimvector.png", use_container_width=True)
+
+
+    # --- Branding ---
+    st.markdown("### 🤖 Innovim HR Chatbot")
+    st.markdown("_Your internal assistant for fast, reliable HR answers._", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # --- How to Use ---
+    st.markdown("### 🧭 How to Use")
+    st.markdown("""
+    • Type a question related to HR or PM policies  
+    • The bot searches the internal handbook  
+    • You'll get a helpful, sourced response
+    """)
+
+    # --- Disclaimer ---
+    st.markdown("<small>⚠️ This chatbot is for informational purposes only.<br>For official HR decisions, please consult HR directly.</small>", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # --- Contact HR ---
+    st.markdown("### 📬 Need More Help?")
+    st.markdown("<div class='sidebar-button'>", unsafe_allow_html=True)
+    if st.button("Contact HR"):
+        st.markdown("_Please email **hr@innovim.com**_", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Feedback ---
+    st.markdown("### 💬 Feedback")
+    st.markdown("Have suggestions or issues?")
+    st.markdown("[Click here to share feedback](https://docs.google.com/forms/d/e/1FAIpQLSc31lOd_KRn9mpffhQNwuthyzh1b3KTSeMGpb12hdJQ5IT_hQ/viewform?usp=dialog)")
+
+    st.markdown("---")
+
+    # --- Clear Chat ---
+    st.markdown("### 🔄 Start Over")
+    st.markdown("Reset the conversation and start fresh.")
+    st.markdown("<div class='sidebar-button'>", unsafe_allow_html=True)
+    if st.button("Clear Chat"):
+        st.session_state.chat_history = []
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Footer ---
+    st.markdown("<div class='sidebar-footer'>Version 1.0 • Last updated May 2025</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
 # --- Header ---
-st.markdown("<h1 style='text-align: center;'>Innovim PM Chatbot (MVP)</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>Ask any question related to Innovim’s project management policies and guidelines.</p>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>Innovim HR Chatbot</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>Your go-to assistant for HR policies, benefits, and employee questions.</p>", unsafe_allow_html=True)
 
 # --- Sample Questions ---
 examples = [
-    "How do I request PTO?",
-    "Who approves scope changes?",
-    "How are milestones tracked?"
+    "How many vacation days do I get?",
+    "What’s the policy on remote work?",
+    "How do I update my benefits info?"
 ]
 
 with st.expander("💡 Need help? Try one of these sample questions:", expanded=False):
@@ -101,22 +158,15 @@ if user_input:
     with st.spinner("Thinking..."):
         # Get handbook chunks
         docs = vectorstore.similarity_search(faiss_query, k=3)
-        context = "\n\n".join([doc.page_content for doc in docs])
-
+        prompt = build_prompt(user_input, docs)
         if not docs:
             answer = "I'm sorry, I couldn't find anything in the handbook that addresses that. You may want to reach out to HR for clarification."
         else:
             # Prepare conversation context
             messages = [
-                {"role": "system", "content": "You are Innovim’s professional assistant, trained on the internal project management handbook. Use only the provided context to answer questions clearly, helpfully, and respectfully. If the answer isn’t available in the context, respond politely and suggest reaching out to HR."},
-                {"role": "system", "content": f"Handbook context:\n\n{context}"}
-            ]
-
-            for m in st.session_state.chat_history[-6:]:
-                messages.append({"role": m["role"], "content": m["content"]})
-
-            messages.append({"role": "user", "content": user_input})
-
+            {"role": "system", "content": "You are Innovim’s professional assistant, trained on the internal project management handbook. Use only the provided context to answer questions clearly, helpfully, and respectfully. If the answer isn’t available in the context, respond politely and suggest reaching out to HR."},
+            {"role": "user", "content": prompt}
+                    ]
             # Generate answer
             try:
                 response = client.chat.completions.create(
@@ -129,4 +179,9 @@ if user_input:
 
     # Show and store assistant response
     st.chat_message("assistant").markdown(f"<div class='chat-bubble bot-bubble'>{answer}</div>", unsafe_allow_html=True)
+    with st.expander("📄 View Sources"):
+            for i, doc in enumerate(docs):
+                st.markdown(f"**Source {i+1}:** {doc.page_content[:500]}...")
     st.session_state.chat_history.append({"role": "assistant", "content": answer})
+
+
