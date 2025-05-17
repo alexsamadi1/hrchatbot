@@ -138,7 +138,7 @@ for entry in st.session_state.chat_history:
         st.markdown(f"<div class='chat-bubble {bubble}'>{entry['content']}</div>", unsafe_allow_html=True)
 
 # --- User Input ---
-user_input = st.chat_input("Ask about PM responsibilities, workflows, or policies...")
+user_input = st.chat_input("Ask a question about HR policies, benefits, or employee resources…")
 
 if "example_question" in st.session_state and not user_input:
     user_input = st.session_state.pop("example_question")
