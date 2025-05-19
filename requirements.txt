@@ -1,7 +1,7 @@
 # Core dependencies
 streamlit==1.45.1
 openai==1.79.0
-faiss-cpu==1.7.4
+faiss-cpu
 pypdf==3.17.4
 
 # LangChain (stable, compatible)
