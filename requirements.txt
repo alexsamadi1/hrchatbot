@@ -5,9 +5,9 @@ faiss-cpu==1.7.4
 pypdf==3.17.4
 
 # LangChain + OpenAI integration
-langchain==0.3.25
-langchain-community==0.0.36
-langchain-core==0.3.60
+langchain==0.1.14
+langchain-openai==0.0.6
+langchain-community==0.0.19
 langchain-openai==0.3.17
 langchain-text-splitters==0.3.8
 
