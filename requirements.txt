@@ -1,22 +1,18 @@
-# Core Packages
+# Core dependencies
 streamlit==1.45.1
 openai==1.79.0
 faiss-cpu==1.7.4
 pypdf==3.17.4
 
-# LangChain + OpenAI integration
+# LangChain (stable, compatible)
 langchain==0.1.14
 langchain-openai==0.0.6
 langchain-community==0.0.19
-langchain-openai==0.3.17
-langchain-text-splitters==0.3.8
 
-# Supporting Tools
+# Utilities
 tiktoken==0.9.0
 pydantic==2.11.4
 pydantic-settings==2.9.1
 pydantic_core==2.33.2
-
-# Optional but Helpful
 python-dotenv
 rich
