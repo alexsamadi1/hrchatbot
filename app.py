@@ -1,9 +1,9 @@
 import streamlit as st
 from openai import OpenAI
-from utils import load_faiss_vectorstore
-from config import INDEX_PATH
-from utils import build_prompt
+from utils import build_prompt, load_faiss_vectorstore
+from config import INDEX_PATH  # you might not need this anymore unless reused elsewhere
 
+# Set up API client
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # --- Page Setup ---
