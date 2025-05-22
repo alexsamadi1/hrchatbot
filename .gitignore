@@ -4,6 +4,9 @@ venv/
 # Streamlit secret key file
 .streamlit/secrets.toml
 
+# FAISS vectorstore
+faiss_index_hr/
+
 # Python cache
 __pycache__/
 *.pyc
