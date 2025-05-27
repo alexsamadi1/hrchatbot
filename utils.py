@@ -55,7 +55,6 @@ def load_faiss_vectorstore_from_pdf(pdf_path: str, api_key: str):
 
     return vectorstore
 
-
 def build_prompt(query: str, documents: list) -> str:
     context_blocks = []
     for doc in documents:
