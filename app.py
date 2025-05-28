@@ -1,15 +1,17 @@
 import streamlit as st
 from openai import OpenAI
-from utils import build_prompt, load_faiss_vectorstore_from_pdf
+from utils import load_faiss_vectorstore
 import time
+
+DEBUG = False  # Set to True to show debug outputs
 
 # --- Page Setup ---
 st.set_page_config(page_title="Innovim HR Chatbot", page_icon="📘", layout="wide")
 
-# --- Load Vectorstore (from PDF, with caching) ---
-@st.cache_resource(show_spinner="Indexing HR Handbook...")
+# --- Load Vectorstore ---
+@st.cache_resource(show_spinner="Indexing HR materials...")
 def get_vectorstore():
-    return load_faiss_vectorstore_from_pdf("InnovimEmployeeHandbook.pdf", st.secrets["OPENAI_API_KEY"])
+    return load_faiss_vectorstore("faiss_index_hr_combined", st.secrets["OPENAI_API_KEY"])
 
 vectorstore = get_vectorstore()
 
@@ -27,7 +29,7 @@ def rerank_with_gpt(query, chunks, client):
         {
             "role": "system",
             "content": (
-                "You are a helpful assistant. Based on the user's question and the provided chunks of handbook text, "
+                "You are a helpful assistant. Based on the user's question and the provided chunks of handbook and onboarding text, "
                 "choose the single chunk that most directly and completely answers the question. "
                 "Only select a chunk if it clearly answers the question. If none of the chunks are clearly relevant, say so."
             )
@@ -49,19 +51,19 @@ def rerank_with_gpt(query, chunks, client):
             return None
         return content
 
-    except Exception as e:
+    except Exception:
         return None
 
-# --- Answer Refinement with Completion Logic ---
+# --- Answer Refinement ---
 def revise_answer_with_gpt(question, draft_answer, client):
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a helpful assistant with access to both company policy and general HR knowledge. "
-                "You are reviewing a draft answer about an HR policy question. If the answer is vague, incomplete, or confusing, "
+                "You are a helpful assistant with access to both Innovim's handbook and onboarding documents. "
+                "You are reviewing a draft answer about an HR policy or employee process question. If the answer is vague, incomplete, or confusing, "
                 "you may revise it using general human reasoning and best practices in HR. You may clarify, add logical context, or expand. "
-                "However, you must NOT fabricate Innovim-specific policy details that were not part of the original handbook context."
+                "However, you must NOT fabricate Innovim-specific policy details that were not part of the original documents."
             )
         },
         {
@@ -74,8 +76,8 @@ def revise_answer_with_gpt(question, draft_answer, client):
             model="gpt-4",
             messages=messages
         )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
+        return response.choices[0].message.content.strip().replace("Revised answer:", "").strip()
+    except Exception:
         return draft_answer
 
 # --- Chat History ---
@@ -147,7 +149,7 @@ if user_input:
     st.chat_message("user").markdown(f"<div class='chat-bubble user-bubble'>{user_input}</div>", unsafe_allow_html=True)
     st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-    # Early return for general questions
+    # Meta query response
     if detect_meta_query(user_input):
         meta_response = (
             "Hi! 👋 I'm Innovim’s internal HR assistant. I can help answer questions about policies, benefits, timekeeping, telework, and more — "
@@ -170,24 +172,31 @@ if user_input:
         if not best_chunk:
             answer = "I couldn’t find a strong match in the handbook. Please try rephrasing or contact HR."
         else:
-            messages = [
-                {"role": "system", "content": (
-                    "You are Innovim’s professional HR assistant. "
-                    "Only use the provided handbook content to answer. "
-                    "If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
-                )},
-                {"role": "user", "content": f"User question: {user_input}\n\nContext:\n{best_chunk}"}
-            ]
             try:
+                messages = [
+                    {"role": "system", "content": (
+                        "You are Innovim’s professional HR assistant. "
+                        "Only use the provided handbook content to answer. "
+                        "If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
+                    )},
+                    {"role": "user", "content": f"User question: {user_input}\n\nContext:\n{best_chunk}"}
+                ]
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=messages
                 )
                 draft_answer = response.choices[0].message.content
                 revised = revise_answer_with_gpt(user_input, draft_answer, client)
-                answer = revised.replace("Revised answer:", "").strip()
+                answer = revised
             except Exception as e:
                 answer = f"❌ OpenAI error: {str(e)}"
 
     st.chat_message("assistant").markdown(f"<div class='chat-bubble bot-bubble'>{answer}</div>", unsafe_allow_html=True)
     st.session_state.chat_history.append({"role": "assistant", "content": answer})
+
+    # Debug tools
+    if DEBUG:
+        with st.expander("🛠 Debug Info"):
+            st.write("Raw Retrieved Chunks", docs)
+            st.write("Selected Chunk", best_chunk)
+            st.write("Answer", answer)

@@ -1,15 +1,22 @@
-# Ignore virtual environment
+# --- Virtual environment ---
 venv/
 
-# Streamlit secret key file
+# --- Streamlit secrets ---
 .streamlit/secrets.toml
+.env
 
-# FAISS vectorstore
+# --- FAISS vectorstores ---
+faiss_index/
 faiss_index_hr/
+faiss_index_hr_combined/
 
-# Python cache
+# --- Python cache ---
 __pycache__/
 *.pyc
 
-# Mac system files
+# --- macOS system files ---
 .DS_Store
+
+# --- VS Code workspace metadata ---
+*.code-workspace
+.vscode/

@@ -1,31 +1,26 @@
+import re
 from langchain.vectorstores import FAISS
 from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.document_loaders import PyPDFLoader
+from langchain.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
 from langchain.schema import Document
-import re
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-def load_faiss_vectorstore_from_pdf(pdf_path: str, api_key: str):
-    """
-    Rebuild FAISS vectorstore with improved section detection:
-    - Detects both numeric (e.g., 508 Paid Time Off) and labeled (e.g., Telecommuting)
-    - Enriches chunks with section titles and common HR keywords
-    """
+def enrich_pdf_chunks(pdf_path: str) -> list:
     loader = PyPDFLoader(pdf_path)
     raw_pages = loader.load()
-
     enriched_chunks = []
+
     section_pattern = re.compile(r"\n?(\d{3,4}\s+[A-Z][^\n]{3,}|[A-Z][A-Za-z\s]+\n)")
 
     for page_num, page in enumerate(raw_pages):
         text = page.page_content
-
         matches = list(section_pattern.finditer(text))
         positions = [m.start() for m in matches]
 
         if not positions:
             enriched_chunks.append(Document(
                 page_content=text.strip(),
-                metadata={"source": f"Page {page_num + 1}"}
+                metadata={"source": f"employee_handbook_page_{page_num + 1}"}
             ))
             continue
 
@@ -45,15 +40,42 @@ def load_faiss_vectorstore_from_pdf(pdf_path: str, api_key: str):
             enriched_chunks.append(Document(
                 page_content=enriched_text,
                 metadata={
-                    "source": f"Page {page_num + 1}",
+                    "source": f"employee_handbook_page_{page_num + 1}",
                     "section_title": title
                 }
             ))
 
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
-    vectorstore = FAISS.from_documents(enriched_chunks, embeddings)
+    return enriched_chunks
 
-    return vectorstore
+def chunk_docx_with_metadata(docx_path: str) -> list:
+    loader = UnstructuredWordDocumentLoader(docx_path)
+    docs = loader.load()
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+    chunks = splitter.split_documents(docs)
+
+    for chunk in chunks:
+        chunk.metadata["source"] = "orientation_guide"
+    return chunks
+
+def load_faiss_vectorstore(index_path: str, api_key: str):
+    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
+    return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+
+def build_combined_vectorstore(pdf_path: str, docx_path: str, index_path: str, api_key: str):
+    print("📥 Enriching PDF handbook...")
+    pdf_chunks = enrich_pdf_chunks(pdf_path)
+
+    print("📥 Chunking DOCX orientation guide...")
+    docx_chunks = chunk_docx_with_metadata(docx_path)
+
+    all_chunks = pdf_chunks + docx_chunks
+    print(f"✅ Total chunks: {len(all_chunks)}")
+
+    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
+    vectorstore = FAISS.from_documents(all_chunks, embeddings)
+    vectorstore.save_local(index_path)
+    print(f"✅ Vectorstore saved to: {index_path}/")
 
 def build_prompt(query: str, documents: list) -> str:
     context_blocks = []
@@ -63,9 +85,9 @@ def build_prompt(query: str, documents: list) -> str:
         block = f"[{title} | {source}]\n{doc.page_content}"
         context_blocks.append(block)
 
-    context = "\n\n".join(context_blocks)
+    context = "\n\n---\n\n".join(context_blocks)
 
-    return f"""You are an Innovim HR assistant. Use only the following context from the official Innovim Employee Handbook to answer.
+    return f"""You are an Innovim HR assistant. Use only the following context from the official Innovim Employee Handbook and Orientation Guide to answer.
 
 If the answer is not clearly in the context, say: "I couldn’t find that in the handbook. Please check with HR."
 
@@ -75,4 +97,3 @@ Context:
 Question:
 {query}
 """
-
