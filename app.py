@@ -2,11 +2,43 @@ import streamlit as st
 from openai import OpenAI
 from utils import load_faiss_vectorstore
 import time
+import re
 
 DEBUG = False  # Set to True to show debug outputs
 
 # --- Page Setup ---
 st.set_page_config(page_title="Innovim HR Chatbot", page_icon="📘", layout="wide")
+
+# --- User Onboarding (Role & Tenure Selection) ---
+if "user_profile" not in st.session_state:
+    st.session_state.user_profile = {}
+
+profile = st.session_state.user_profile
+
+# Only show onboarding if profile isn't set
+if "role" not in profile or "tenure" not in profile:
+    st.markdown("## 👋 Welcome! Let’s get to know you first")
+
+    role = st.radio("What's your role at Innovim?", [
+        "Project Manager", 
+        "General Staff", 
+        "Executive", 
+        "Contractor or Consultant"
+    ], key="role_radio")
+
+    tenure = st.radio("How long have you been with Innovim?", [
+        "New Hire (0–30 days)",
+        "1–6 Months",
+        "6+ Months",
+        "2+ Years"
+    ], key="tenure_radio")
+
+    if role and tenure:
+        profile["role"] = role
+        profile["tenure"] = tenure
+        st.success("You're all set! You can now start asking questions below 👇")
+        st.stop()
+
 
 # --- Load Vectorstore ---
 @st.cache_resource(show_spinner="Indexing HR materials...")
@@ -86,36 +118,67 @@ if "chat_history" not in st.session_state:
 
 # --- Meta Query Detector ---
 def detect_meta_query(query):
-    q = query.lower()
-    return any(phrase in q for phrase in [
-        "what can you do", "how do you work", "can i ask you",
-        "what is this", "how can you help", "help me", "who are you",
-        "hi", "hello"
-    ])
+    q = query.lower().strip()
+
+    # Match only simple greeting or assistant-checking phrases
+    meta_patterns = [
+        r"^\s*hi\s*$",
+        r"^\s*hello\s*$",
+        r"^\s*who are you\??\s*$",
+        r"^\s*what can you do\??\s*$",
+        r"^\s*how do you work\??\s*$",
+        r"^\s*can i ask you\??\s*$",
+        r"^\s*help me\??\s*$",
+        r"^\s*how can you help\??\s*$",
+        r"^\s*what is this\??\s*$"
+    ]
+
+    return any(re.match(pattern, q) for pattern in meta_patterns)
+
+# def detect_meta_query(query):
+#     q = query.lower()
+#     return any(phrase in q for phrase in [
+#         "what can you do", "how do you work", "can i ask you",
+#         "what is this", "how can you help", "help me", "who are you",
+#         "hi", "hello"
+#     ])
+
 
 # --- Sidebar ---
+
 with st.sidebar:
     st.image("innovimvector.png", use_container_width=True)
-    st.markdown("### 🤖 Innovim HR Chatbot")
-    st.markdown("_Your internal assistant for fast, reliable HR answers._")
+
+    st.markdown("## 🤖 Innovim HR Assistant")
+    st.caption("_Your personal guide for Innovim HR policies & info._")
+
+    st.markdown("### 🧭 Quick Start")
+    st.markdown("Ask about:\n- PTO / Vacation\n- Remote work\n- Benefits updates\n- Time tracking")
+
+    st.markdown("### 💬 Sample Questions")
+    sample_questions = [
+        "How many vacation days do I get?",
+        "What’s the policy on remote work?",
+        "How do I update my benefits info?"
+    ]
+    for i, q in enumerate(sample_questions):
+        if st.button(f"💡 {q}", key=f"sample_q_{i}"):
+            st.session_state["example_question"] = q
+
     st.markdown("---")
-    st.markdown("### 🧭 How to Use")
-    st.markdown("""
-    • Type a question related to HR or PM policies  
-    • The bot searches the internal handbook  
-    • You'll get a helpful, sourced response
-    """)
+
     st.markdown("### 📬 Need More Help?")
-    if st.button("Contact HR"):
-        st.markdown("_Please email **hr@innovim.com**_")
-    st.markdown("### 🔄 Start Over")
-    if st.button("Clear Chat"):
+    st.markdown("Email [hr@innovim.com](mailto:hr@innovim.com)")
+
+    if st.button("🔄 Start Over"):
         st.session_state.chat_history = []
         st.rerun()
-    st.markdown("### 💬 Feedback")
-    st.markdown("[Share your feedback here](https://docs.google.com/forms/d/e/1FAIpQLSc31lOd_KRn9mpffhQNwuthyzh1b3KTSeMGpb12hdJQ5IT_hQ/viewform?usp=dialog)")
+
     st.markdown("---")
-    st.markdown("<div style='font-size: 0.8rem; color: gray;'>Version 1.0 • Last updated May 2025</div>", unsafe_allow_html=True)
+
+    st.markdown("### 💡 Feedback & Version")
+    st.markdown("[📣 Submit Feedback](https://docs.google.com/forms/d/e/1FAIpQLSc31lOd_KRn9mpffhQNwuthyzh1b3KTSeMGpb12hdJQ5IT_hQ/viewform?usp=dialog)")
+    st.markdown("<div style='font-size: 0.8rem; color: gray;'>🔒 Internal Use Only • Version 1.0 • Updated May 2025</div>", unsafe_allow_html=True)
 
 # --- Main Header ---
 st.markdown("<h1 style='text-align: center;'>Innovim HR Chatbot</h1>", unsafe_allow_html=True)
@@ -175,10 +238,11 @@ if user_input:
             try:
                 messages = [
                     {"role": "system", "content": (
-                        "You are Innovim’s professional HR assistant. "
-                        "Only use the provided handbook content to answer. "
-                        "If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
+                        f"You are Innovim’s professional HR assistant. The user is a {profile['role']} who has been with the company for {profile['tenure']}.\n"
+                        "Use this context to tailor your answer whenever possible. "
+                        "Only use the provided handbook content to answer. If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
                     )},
+
                     {"role": "user", "content": f"User question: {user_input}\n\nContext:\n{best_chunk}"}
                 ]
                 response = client.chat.completions.create(
