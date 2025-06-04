@@ -15,28 +15,39 @@ if "user_profile" not in st.session_state:
 
 profile = st.session_state.user_profile
 
-# Only show onboarding if profile isn't set
+# --- User Onboarding (Improved Flow) ---
+if "user_profile" not in st.session_state:
+    st.session_state.user_profile = {}
+
+if "role_selection" not in st.session_state:
+    st.session_state.role_selection = None
+
+if "tenure_selection" not in st.session_state:
+    st.session_state.tenure_selection = None
+
+profile = st.session_state.user_profile
+
 if "role" not in profile or "tenure" not in profile:
     st.markdown("## 👋 Welcome! Let’s get to know you first")
 
-    role = st.radio("What's your role at Innovim?", [
-        "Project Manager", 
-        "General Staff", 
-        "Executive", 
-        "Contractor or Consultant"
-    ], key="role_radio")
+    st.session_state.role_selection = st.radio(
+        "What's your role at Innovim?",
+        ["Project Manager", "General Staff", "Executive", "Contractor or Consultant"],
+        key="role_radio_updated"
+    )
 
-    tenure = st.radio("How long have you been with Innovim?", [
-        "New Hire (0–30 days)",
-        "1–6 Months",
-        "6+ Months",
-        "2+ Years"
-    ], key="tenure_radio")
+    st.session_state.tenure_selection = st.radio(
+        "How long have you been with Innovim?",
+        ["New Hire (0–30 days)", "1–6 Months", "6+ Months", "2+ Years"],
+        key="tenure_radio_updated"
+    )
 
-    if role and tenure:
-        profile["role"] = role
-        profile["tenure"] = tenure
+    if st.button("✅ Continue"):
+        profile["role"] = st.session_state.role_selection
+        profile["tenure"] = st.session_state.tenure_selection
         st.success("You're all set! You can now start asking questions below 👇")
+        st.rerun()
+    else:
         st.stop()
 
 
@@ -51,6 +62,7 @@ vectorstore = get_vectorstore()
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # --- Rerank Logic ---
+
 def rerank_with_gpt(query, chunks, client):
     if not chunks:
         return None
@@ -62,8 +74,8 @@ def rerank_with_gpt(query, chunks, client):
             "role": "system",
             "content": (
                 "You are a helpful assistant. Based on the user's question and the provided chunks of handbook and onboarding text, "
-                "choose the single chunk that most directly and completely answers the question. "
-                "Only select a chunk if it clearly answers the question. If none of the chunks are clearly relevant, say so."
+                "choose the single chunk that most directly and fully answers the question. Only select a chunk if it clearly answers the question. "
+                "If none of the chunks are clearly relevant, say so."
             )
         },
         {
@@ -80,12 +92,43 @@ def rerank_with_gpt(query, chunks, client):
         content = response.choices[0].message.content.strip()
 
         if "none are clearly relevant" in content.lower():
-            return None
+            return summarize_fallback(query, chunks, client)
         return content
 
     except Exception:
         return None
+    
+# --- Summarize Fallback ---
 
+def summarize_fallback(query, chunks, client):
+    fallback_context = "\n\n".join([chunk.page_content[:500] for chunk in chunks[:3]])  # top 3 chunks
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant trained on Innovim's employee handbook and onboarding documents. "
+                "The user asked a question that wasn't answered clearly by a single chunk, but we’ve gathered related information. "
+                "Using these, summarize a helpful, cautious response — and if the answer is uncertain, recommend the user contact HR. "
+                "Never fabricate Innovim policy details."
+            )
+        },
+        {
+            "role": "user",
+            "content": f"User question: {query}\n\nPartial content:\n{fallback_context}\n\nPlease provide the most helpful answer you can from this content."
+        }
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=messages
+        )
+        return response.choices[0].message.content.strip()
+
+    except Exception:
+        return "I'm not confident I can answer that directly. Please check the handbook or contact HR for guidance."
+    
 # --- Answer Refinement ---
 def revise_answer_with_gpt(question, draft_answer, client):
     messages = [
