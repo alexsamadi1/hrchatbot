@@ -1,22 +1,23 @@
-# --- Virtual environment ---
+# --- Python virtual environments ---
 venv/
 
-# --- Streamlit secrets ---
-.streamlit/secrets.toml
+# --- Environment and secrets ---
 .env
+.streamlit/secrets.toml
 
 # --- FAISS vectorstores ---
 faiss_index/
 faiss_index_hr/
 faiss_index_hr_combined/
 
-# --- Python cache ---
+# --- Python bytecode ---
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
 
 # --- macOS system files ---
 .DS_Store
 
-# --- VS Code workspace metadata ---
-*.code-workspace
+# --- VS Code workspace ---
 .vscode/
+*.code-workspace

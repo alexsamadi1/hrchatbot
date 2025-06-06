@@ -14,48 +14,57 @@ def get_openai_api_key():
         raise ValueError("❌ OPENAI_API_KEY is not set. Please check your .env file or Streamlit secrets.")
     return key
 
-# --- Build and Save Combined Vectorstore (Reusable) ---
+# --- Build and Save Combined Vectorstore ---
 def build_vectorstore(
     pdf_path="InnovimEmployeeHandbook.pdf",
     docx_path="innovimnew.docx",
     index_path="faiss_index",
     api_key=None
 ):
-    print("🔍 Loading PDF and DOCX...")
+    print("🔍 Checking for existing FAISS index...")
+    index_file = Path(index_path) / "index.faiss"
+
+    embeddings = OpenAIEmbeddings(openai_api_key=api_key or get_openai_api_key())
+
+    if index_file.exists():
+        print(f"✅ Existing vectorstore found at '{index_path}/'. Loading...")
+        return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+
+    print("🚧 No index found. Building new vectorstore...")
+
+    # --- Load PDF ---
     pdf_loader = PyPDFLoader(pdf_path)
     pdf_docs = pdf_loader.load()
     for doc in pdf_docs:
         doc.metadata["source"] = "employee_handbook"
 
+    # --- Load DOCX ---
     docx_loader = UnstructuredWordDocumentLoader(docx_path)
     docx_docs = docx_loader.load()
     for doc in docx_docs:
         doc.metadata["source"] = "orientation_guide"
 
+    # --- Combine and Split ---
     all_docs = pdf_docs + docx_docs
-    print(f"✅ Loaded {len(all_docs)} total pages")
+    print(f"📄 Loaded {len(all_docs)} total documents")
 
-    print("🔧 Splitting into chunks...")
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=150,
         separators=["\n\n", "\n", ".", " ", ""]
     )
     docs = splitter.split_documents(all_docs)
-    print(f"📄 Created {len(docs)} chunks")
+    print(f"✂️ Split into {len(docs)} chunks")
 
-    print("📦 Embedding and saving FAISS index...")
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key or get_openai_api_key())
+    # --- Embed and Save ---
+    print("💾 Saving FAISS index...")
+    Path(index_path).mkdir(parents=True, exist_ok=True)
     vectorstore = FAISS.from_documents(docs, embeddings)
+    vectorstore.save_local(index_path)
 
-    # Ensure save path exists
-    path = Path(index_path)
-    path.mkdir(parents=True, exist_ok=True)
-    vectorstore.save_local(path)
-    print(f"✅ Vectorstore saved to '{index_path}/'")
-
+    print(f"✅ Vectorstore built and saved to '{index_path}/'")
     return vectorstore
 
-# Optional CLI use
+# --- Optional CLI ---
 if __name__ == "__main__":
     build_vectorstore(index_path="faiss_index_hr_combined")

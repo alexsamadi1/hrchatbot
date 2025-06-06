@@ -6,33 +6,33 @@ import re
 import nltk
 import os
 
-def ensure_nltk_punkt_ready():
-    nltk_path = "/tmp/nltk_data"
-    os.makedirs(nltk_path, exist_ok=True)
-    nltk.data.path.append(nltk_path)
+# def ensure_nltk_punkt_ready():
+#     nltk_path = "/tmp/nltk_data"
+#     os.makedirs(nltk_path, exist_ok=True)
+#     nltk.data.path.append(nltk_path)
 
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        nltk.download("punkt", download_dir=nltk_path)
+#     try:
+#         nltk.data.find("tokenizers/punkt")
+#     except LookupError:
+#         nltk.download("punkt", download_dir=nltk_path)
 
-    try:
-        nltk.data.find("tokenizers/punkt_tab")
-    except LookupError:
-        nltk.download("punkt_tab", download_dir=nltk_path)
+#     try:
+#         nltk.data.find("tokenizers/punkt_tab")
+#     except LookupError:
+#         nltk.download("punkt_tab", download_dir=nltk_path)
 
-    try:
-        nltk.data.find("taggers/averaged_perceptron_tagger")
-    except LookupError:
-        nltk.download("averaged_perceptron_tagger", download_dir=nltk_path)
+#     try:
+#         nltk.data.find("taggers/averaged_perceptron_tagger")
+#     except LookupError:
+#         nltk.download("averaged_perceptron_tagger", download_dir=nltk_path)
 
-    try:
-        nltk.data.find("taggers/averaged_perceptron_tagger_eng")
-    except LookupError:
-        nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_path)
+#     try:
+#         nltk.data.find("taggers/averaged_perceptron_tagger_eng")
+#     except LookupError:
+#         nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_path)
 
 
-ensure_nltk_punkt_ready()  # ✅ Run immediately
+#ensure_nltk_punkt_ready()  # ✅ Run immediately
 
 DEBUG = False  # Set to True to show debug outputs
 
@@ -81,22 +81,24 @@ if "role" not in profile or "tenure" not in profile:
         st.stop()
 
 # --- Load Vectorstore ---
-@st.cache_resource
-@st.cache_resource
+@st.cache_resource(show_spinner="🔍 Loading vectorstore...")
 def get_vectorstore():
     try:
         return load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"], index_dir="faiss_index")
-    except Exception:
+    except Exception as e:
+       #st.warning("Vectorstore not found. Rebuilding it now…")
         from tools.build_combined_vectorstore import build_vectorstore
-        return build_vectorstore(
+        vectorstore = build_vectorstore(
             pdf_path="InnovimEmployeeHandbook.pdf",
             docx_path="innovimnew.docx",
             index_path="faiss_index",
             api_key=st.secrets["OPENAI_API_KEY"]
         )
+        return vectorstore  # ✅ make sure this is not returning a bool (e.g. `return vectorstore is`)
+
 
 # ✅ Ensure NLTK punkt is ready before using doc loaders
-ensure_nltk_punkt_ready()
+#ensure_nltk_punkt_ready()
 
 # ✅ Now safe to load vectorstore
 vectorstore = get_vectorstore()
@@ -191,7 +193,7 @@ def revise_answer_with_gpt(question, draft_answer, client):
     ]
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=messages
         )
         return response.choices[0].message.content.strip().replace("Revised answer:", "").strip()
