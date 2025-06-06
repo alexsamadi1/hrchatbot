@@ -50,6 +50,9 @@ if "role" not in profile or "tenure" not in profile:
     else:
         st.stop()
 
+import nltk
+nltk.data.path.append("/tmp")  # Store in temporary path for Streamlit Cloud
+nltk.download("punkt", download_dir="/tmp")
 
 # --- Load Vectorstore ---
 @st.cache_resource
@@ -66,7 +69,6 @@ def get_vectorstore():
             index_path="faiss_index",
             api_key=st.secrets["OPENAI_API_KEY"]
         )
-
 
 vectorstore = get_vectorstore()
 
