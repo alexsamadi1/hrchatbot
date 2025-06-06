@@ -82,11 +82,11 @@ if "role" not in profile or "tenure" not in profile:
 
 # --- Load Vectorstore ---
 @st.cache_resource
+@st.cache_resource
 def get_vectorstore():
     try:
         return load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"], index_dir="faiss_index")
-    except Exception as e:
-        st.warning("Vectorstore not found or incompatible. Rebuilding now...")
+    except Exception:
         from tools.build_combined_vectorstore import build_vectorstore
         return build_vectorstore(
             pdf_path="InnovimEmployeeHandbook.pdf",
