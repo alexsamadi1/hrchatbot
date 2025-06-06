@@ -52,17 +52,19 @@ if "role" not in profile or "tenure" not in profile:
     else:
         st.stop()
 
-# --- Load Vectorstore ---
-@st.cache_resource
-def get_vectorstore():
-    # Ensure punkt is available before building vectorstore
+# --- nltk ---
+def ensure_nltk_punkt_ready():
     nltk_path = "/tmp/nltk_data"
     os.makedirs(nltk_path, exist_ok=True)
     nltk.data.path.append(nltk_path)
-
-    if not os.path.exists(os.path.join(nltk_path, "tokenizers", "punkt")):
+    try:
+        nltk.data.find("tokenizers/punkt")
+    except LookupError:
         nltk.download("punkt", download_dir=nltk_path)
 
+# --- Load Vectorstore ---
+@st.cache_resource
+def get_vectorstore():
     try:
         return load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"], index_dir="faiss_index")
     except Exception as e:
@@ -74,7 +76,13 @@ def get_vectorstore():
             index_path="faiss_index",
             api_key=st.secrets["OPENAI_API_KEY"]
         )
+
+# ✅ Ensure NLTK punkt is ready before using doc loaders
+ensure_nltk_punkt_ready()
+
+# ✅ Now safe to load vectorstore
 vectorstore = get_vectorstore()
+
 
 # --- Set up OpenAI Client ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
