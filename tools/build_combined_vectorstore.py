@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -13,9 +14,13 @@ def get_openai_api_key():
         raise ValueError("❌ OPENAI_API_KEY is not set. Please check your .env file or Streamlit secrets.")
     return key
 
-# --- Build and Save Combined Vectorstore ---
-def build_combined_vectorstore(pdf_path, docx_path, index_path, api_key):
-    # Load documents
+# --- Build and Save Combined Vectorstore (Reusable) ---
+def build_vectorstore(
+    pdf_path="InnovimEmployeeHandbook.pdf",
+    docx_path="innovimnew.docx",
+    index_path="faiss_index",
+    api_key=None
+):
     print("🔍 Loading PDF and DOCX...")
     pdf_loader = PyPDFLoader(pdf_path)
     pdf_docs = pdf_loader.load()
@@ -30,7 +35,6 @@ def build_combined_vectorstore(pdf_path, docx_path, index_path, api_key):
     all_docs = pdf_docs + docx_docs
     print(f"✅ Loaded {len(all_docs)} total pages")
 
-    # Split into chunks
     print("🔧 Splitting into chunks...")
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -40,17 +44,18 @@ def build_combined_vectorstore(pdf_path, docx_path, index_path, api_key):
     docs = splitter.split_documents(all_docs)
     print(f"📄 Created {len(docs)} chunks")
 
-    # Embed and save
     print("📦 Embedding and saving FAISS index...")
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
+    embeddings = OpenAIEmbeddings(openai_api_key=api_key or get_openai_api_key())
     vectorstore = FAISS.from_documents(docs, embeddings)
-    vectorstore.save_local(index_path)
+
+    # Ensure save path exists
+    path = Path(index_path)
+    path.mkdir(parents=True, exist_ok=True)
+    vectorstore.save_local(path)
     print(f"✅ Vectorstore saved to '{index_path}/'")
 
-if __name__ == "__main__":
-    PDF_PATH = "InnovimEmployeeHandbook.pdf"
-    DOCX_PATH = "innovimnew.docx"
-    INDEX_PATH = "faiss_index_hr_combined"
+    return vectorstore
 
-    api_key = get_openai_api_key()
-    build_combined_vectorstore(PDF_PATH, DOCX_PATH, INDEX_PATH, api_key)
+# Optional CLI use
+if __name__ == "__main__":
+    build_vectorstore(index_path="faiss_index_hr_combined")
