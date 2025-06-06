@@ -3,6 +3,8 @@ from openai import OpenAI
 from utils import load_faiss_vectorstore
 import time
 import re
+import nltk
+import os
 
 DEBUG = False  # Set to True to show debug outputs
 
@@ -50,9 +52,12 @@ if "role" not in profile or "tenure" not in profile:
     else:
         st.stop()
 
-import nltk
-nltk.data.path.append("/tmp")  # Store in temporary path for Streamlit Cloud
-nltk.download("punkt", download_dir="/tmp")
+nltk_path = "/tmp/nltk_data"
+os.makedirs(nltk_path, exist_ok=True)
+
+nltk.data.path.append(nltk_path)
+if not os.path.exists(os.path.join(nltk_path, "tokenizers", "punkt")):
+    nltk.download("punkt", download_dir=nltk_path)
 
 # --- Load Vectorstore ---
 @st.cache_resource
