@@ -6,6 +6,17 @@ import re
 import nltk
 import os
 
+def ensure_nltk_punkt_ready():
+    nltk_path = "/tmp/nltk_data"
+    os.environ["NLTK_DATA"] = nltk_path
+    os.makedirs(nltk_path, exist_ok=True)
+    nltk.data.path.append(nltk_path)
+    try:
+        nltk.data.find("tokenizers/punkt")
+    except LookupError:
+        nltk.download("punkt", download_dir=nltk_path)
+
+ensure_nltk_punkt_ready()  # ✅ Run immediately
 DEBUG = False  # Set to True to show debug outputs
 
 # --- Page Setup ---
@@ -52,16 +63,6 @@ if "role" not in profile or "tenure" not in profile:
     else:
         st.stop()
 
-# --- nltk ---
-def ensure_nltk_punkt_ready():
-    nltk_path = "/tmp/nltk_data"
-    os.makedirs(nltk_path, exist_ok=True)
-    nltk.data.path.append(nltk_path)
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        nltk.download("punkt", download_dir=nltk_path)
-
 # --- Load Vectorstore ---
 @st.cache_resource
 def get_vectorstore():
@@ -82,7 +83,6 @@ ensure_nltk_punkt_ready()
 
 # ✅ Now safe to load vectorstore
 vectorstore = get_vectorstore()
-
 
 # --- Set up OpenAI Client ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
