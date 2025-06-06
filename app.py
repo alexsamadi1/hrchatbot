@@ -54,7 +54,7 @@ if "role" not in profile or "tenure" not in profile:
 # --- Load Vectorstore ---
 @st.cache_resource(show_spinner="Indexing HR materials...")
 def get_vectorstore():
-    return load_faiss_vectorstore("faiss_index_hr_combined", st.secrets["OPENAI_API_KEY"])
+    return load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"], index_dir="faiss_index")
 
 vectorstore = get_vectorstore()
 

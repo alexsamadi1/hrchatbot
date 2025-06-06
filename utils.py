@@ -1,9 +1,10 @@
 import re
-from langchain.vectorstores import FAISS
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
-from langchain.schema import Document
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
+from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 
 def enrich_pdf_chunks(pdf_path: str) -> list:
     loader = PyPDFLoader(pdf_path)
@@ -58,9 +59,10 @@ def chunk_docx_with_metadata(docx_path: str) -> list:
         chunk.metadata["source"] = "orientation_guide"
     return chunks
 
-def load_faiss_vectorstore(index_path: str, api_key: str):
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
-    return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+def load_faiss_vectorstore(index_name, openai_api_key, index_dir="faiss_index"):
+    path = Path(index_dir)
+    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+    return FAISS.load_local(path, embeddings, index_name=index_name, allow_dangerous_deserialization=True)
 
 def build_combined_vectorstore(pdf_path: str, docx_path: str, index_path: str, api_key: str):
     print("📥 Enriching PDF handbook...")
