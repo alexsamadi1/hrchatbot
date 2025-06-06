@@ -291,6 +291,22 @@ with st.expander("💡 Try a sample question", expanded=False):
         if st.button(q, key=f"sample_{q}"):
             st.session_state["example_question"] = q
 
+# --- Empty State UX ---
+if not st.session_state.chat_history and "example_question" not in st.session_state:
+    with st.chat_message("assistant"):
+        st.markdown("""
+        <div class='chat-bubble bot-bubble'>
+             Hi there! I’m your Innovim HR Assistant. You can ask me anything about:
+            <ul>
+                <li> Time tracking</li>
+                <li> Vacation / PTO</li>
+                <li> Remote work</li>
+                <li> Benefits & forms</li>
+            </ul>
+            Just type your question below or click one of the samples to get started.
+        </div>
+        """, unsafe_allow_html=True)
+
 # --- Show Chat History ---
 for entry in st.session_state.chat_history:
     with st.chat_message(entry["role"]):
@@ -303,24 +319,25 @@ user_input = st.chat_input("Ask a question about HR policies, benefits, or emplo
 if "example_question" in st.session_state and not user_input:
     user_input = st.session_state.pop("example_question")
 
-# Prevent blank or non-string inputs from continuing
+# ✅ EXIT EARLY IF INPUT IS BLANK OR INVALID
 if not user_input or not isinstance(user_input, str) or not user_input.strip():
-    st.warning("Please enter a valid question.")
     st.stop()
-    
+
+# from here on: guaranteed valid input
+# Prevent blank or non-string inputs from continuing
 if user_input:
     st.chat_message("user").markdown(f"<div class='chat-bubble user-bubble'>{user_input}</div>", unsafe_allow_html=True)
     st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-    # Meta query response
-    if detect_meta_query(user_input):
-        with st.chat_message("assistant"):
-            st.markdown(
-                f"<div class='chat-bubble bot-bubble'>Hi! 👋 I'm Innovim’s internal HR assistant. I can help answer questions about policies, benefits, timekeeping, telework, and more — all based on our official employee handbook.<br><br>Try asking something like:<br>• How many vacation days do I get?<br>• What’s the policy on remote work?<br>• What happens if I forget to log my time?</div>",
-                unsafe_allow_html=True
-            )
-        st.session_state.chat_history.append({"role": "assistant", "content": "Hi! 👋 I'm Innovim’s internal HR assistant..."})
-        st.stop()
+    # # Meta query response
+    # if detect_meta_query(user_input):
+    #     with st.chat_message("assistant"):
+    #         st.markdown(
+    #             f"<div class='chat-bubble bot-bubble'>Hi! 👋 I'm Innovim’s internal HR assistant. I can help answer questions about policies, benefits, timekeeping, telework, and more — all based on our official employee handbook.<br><br>Try asking something like:<br>• How many vacation days do I get?<br>• What’s the policy on remote work?<br>• What happens if I forget to log my time?</div>",
+    #             unsafe_allow_html=True
+    #         )
+    #     st.session_state.chat_history.append({"role": "assistant", "content": "Hi! 👋 I'm Innovim’s internal HR assistant..."})
+    #     st.stop()
 
 with st.spinner("Searching policies..."):
     with st.chat_message("assistant"):
@@ -332,8 +349,7 @@ with st.spinner("Searching policies..."):
         )
 
         # Step 2: Run similarity search and reranking
-        if not user_input or not isinstance(user_input, str):
-            st.warning("Please enter a valid question.")
+        if not user_input or not isinstance(user_input, str) or not user_input.strip():
             st.stop()
         results = vectorstore.similarity_search_with_score(user_input, k=5)
         docs = [doc for doc, score in results if score >= 0.25]
@@ -377,3 +393,4 @@ with st.spinner("Searching policies..."):
             st.write("Raw Retrieved Chunks", docs)
             st.write("Selected Chunk", best_chunk)
             st.write("Answer", answer)
+
