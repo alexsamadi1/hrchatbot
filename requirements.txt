@@ -16,3 +16,4 @@ pydantic-settings==2.9.1
 pydantic_core==2.33.2
 python-dotenv
 rich
+unstructured==0.11.0
