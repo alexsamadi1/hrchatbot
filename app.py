@@ -52,18 +52,18 @@ if "role" not in profile or "tenure" not in profile:
     else:
         st.stop()
 
-nltk_path = "/tmp/nltk_data"
-os.makedirs(nltk_path, exist_ok=True)
-
-nltk.data.path.append(nltk_path)
-if not os.path.exists(os.path.join(nltk_path, "tokenizers", "punkt")):
-    nltk.download("punkt", download_dir=nltk_path)
-
 # --- Load Vectorstore ---
 @st.cache_resource
 def get_vectorstore():
+    # Ensure punkt is available before building vectorstore
+    nltk_path = "/tmp/nltk_data"
+    os.makedirs(nltk_path, exist_ok=True)
+    nltk.data.path.append(nltk_path)
+
+    if not os.path.exists(os.path.join(nltk_path, "tokenizers", "punkt")):
+        nltk.download("punkt", download_dir=nltk_path)
+
     try:
-        # Try loading the FAISS vectorstore from local path
         return load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"], index_dir="faiss_index")
     except Exception as e:
         st.warning("Vectorstore not found or incompatible. Rebuilding now...")
@@ -74,7 +74,6 @@ def get_vectorstore():
             index_path="faiss_index",
             api_key=st.secrets["OPENAI_API_KEY"]
         )
-
 vectorstore = get_vectorstore()
 
 # --- Set up OpenAI Client ---
