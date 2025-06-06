@@ -3,41 +3,51 @@ from openai import OpenAI
 from utils import load_faiss_vectorstore
 import time
 import re
-import nltk
-import os
-
-# def ensure_nltk_punkt_ready():
-#     nltk_path = "/tmp/nltk_data"
-#     os.makedirs(nltk_path, exist_ok=True)
-#     nltk.data.path.append(nltk_path)
-
-#     try:
-#         nltk.data.find("tokenizers/punkt")
-#     except LookupError:
-#         nltk.download("punkt", download_dir=nltk_path)
-
-#     try:
-#         nltk.data.find("tokenizers/punkt_tab")
-#     except LookupError:
-#         nltk.download("punkt_tab", download_dir=nltk_path)
-
-#     try:
-#         nltk.data.find("taggers/averaged_perceptron_tagger")
-#     except LookupError:
-#         nltk.download("averaged_perceptron_tagger", download_dir=nltk_path)
-
-#     try:
-#         nltk.data.find("taggers/averaged_perceptron_tagger_eng")
-#     except LookupError:
-#         nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_path)
-
-
-#ensure_nltk_punkt_ready()  # ✅ Run immediately
 
 DEBUG = False  # Set to True to show debug outputs
 
 # --- Page Setup ---
 st.set_page_config(page_title="Innovim HR Chatbot", page_icon="📘", layout="wide")
+
+# --- Global CSS Styling ---
+st.markdown("""
+<style>
+.chat-bubble {
+  margin: 0.5rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  display: inline-block;
+  max-width: 90%;
+  line-height: 1.5;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.user-bubble {
+  background-color: #1B4F72;  /* navy blue */
+  color: #ffffff;
+  align-self: flex-end;
+}
+
+.bot-bubble {
+  background-color: #F0F4F8;  /* soft white */
+  color: #0B1724;
+  align-self: flex-start;
+}
+    
+.typing-dots::after {
+  content: '';
+  display: inline-block;
+  animation: dots 1.2s steps(3, end) infinite;
+}
+
+@keyframes dots {
+  0% { content: ''; }
+  33% { content: '.'; }
+  66% { content: '..'; }
+  100% { content: '...'; }
+}
+</style>
+""", unsafe_allow_html=True)
 
 # --- User Onboarding (Role & Tenure Selection) ---
 if "user_profile" not in st.session_state:
@@ -96,9 +106,6 @@ def get_vectorstore():
         )
         return vectorstore  # ✅ make sure this is not returning a bool (e.g. `return vectorstore is`)
 
-
-# ✅ Ensure NLTK punkt is ready before using doc loaders
-#ensure_nltk_punkt_ready()
 
 # ✅ Now safe to load vectorstore
 vectorstore = get_vectorstore()
@@ -296,30 +303,43 @@ user_input = st.chat_input("Ask a question about HR policies, benefits, or emplo
 if "example_question" in st.session_state and not user_input:
     user_input = st.session_state.pop("example_question")
 
+# Prevent blank or non-string inputs from continuing
+if not user_input or not isinstance(user_input, str) or not user_input.strip():
+    st.warning("Please enter a valid question.")
+    st.stop()
+    
 if user_input:
     st.chat_message("user").markdown(f"<div class='chat-bubble user-bubble'>{user_input}</div>", unsafe_allow_html=True)
     st.session_state.chat_history.append({"role": "user", "content": user_input})
 
     # Meta query response
     if detect_meta_query(user_input):
-        meta_response = (
-            "Hi! 👋 I'm Innovim’s internal HR assistant. I can help answer questions about policies, benefits, timekeeping, telework, and more — "
-            "all based on our official employee handbook.\n\n"
-            "Try asking something like:\n"
-            "• How many vacation days do I get?\n"
-            "• What’s the policy on remote work?\n"
-            "• What happens if I forget to log my time?"
-        )
-        st.chat_message("assistant").markdown(f"<div class='chat-bubble bot-bubble'>{meta_response}</div>", unsafe_allow_html=True)
-        st.session_state.chat_history.append({"role": "assistant", "content": meta_response})
+        with st.chat_message("assistant"):
+            st.markdown(
+                f"<div class='chat-bubble bot-bubble'>Hi! 👋 I'm Innovim’s internal HR assistant. I can help answer questions about policies, benefits, timekeeping, telework, and more — all based on our official employee handbook.<br><br>Try asking something like:<br>• How many vacation days do I get?<br>• What’s the policy on remote work?<br>• What happens if I forget to log my time?</div>",
+                unsafe_allow_html=True
+            )
+        st.session_state.chat_history.append({"role": "assistant", "content": "Hi! 👋 I'm Innovim’s internal HR assistant..."})
         st.stop()
 
-    with st.spinner("Searching policies..."):
+with st.spinner("Searching policies..."):
+    with st.chat_message("assistant"):
+        # Step 1: Show animated typing message first
+        placeholder = st.empty()
+        placeholder.markdown(
+            "<div class='chat-bubble bot-bubble'>🤖 <span class='typing-dots'>Typing</span></div>",
+            unsafe_allow_html=True
+        )
+
+        # Step 2: Run similarity search and reranking
+        if not user_input or not isinstance(user_input, str):
+            st.warning("Please enter a valid question.")
+            st.stop()
         results = vectorstore.similarity_search_with_score(user_input, k=5)
         docs = [doc for doc, score in results if score >= 0.25]
-
         best_chunk = rerank_with_gpt(user_input, docs, client)
 
+        # Step 3: If no match found
         if not best_chunk:
             answer = "I couldn’t find a strong match in the handbook. Please try rephrasing or contact HR."
         else:
@@ -330,21 +350,26 @@ if user_input:
                         "Use this context to tailor your answer whenever possible. "
                         "Only use the provided handbook content to answer. If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
                     )},
-
                     {"role": "user", "content": f"User question: {user_input}\n\nContext:\n{best_chunk}"}
                 ]
+
+                # Step 4: Generate response
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=messages
                 )
                 draft_answer = response.choices[0].message.content
-                revised = revise_answer_with_gpt(user_input, draft_answer, client)
-                answer = revised
+                answer = revise_answer_with_gpt(user_input, draft_answer, client)
+
             except Exception as e:
                 answer = f"❌ OpenAI error: {str(e)}"
 
-    st.chat_message("assistant").markdown(f"<div class='chat-bubble bot-bubble'>{answer}</div>", unsafe_allow_html=True)
-    st.session_state.chat_history.append({"role": "assistant", "content": answer})
+        # Step 5: Replace placeholder with final answer
+        placeholder.markdown(
+            f"<div class='chat-bubble bot-bubble'>{answer}</div>",
+            unsafe_allow_html=True
+        )
+        st.session_state.chat_history.append({"role": "assistant", "content": answer})
 
     # Debug tools
     if DEBUG:
