@@ -1,10 +1,10 @@
 import re
+from pathlib import Path
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-
 
 def enrich_pdf_chunks(pdf_path: str) -> list:
     loader = PyPDFLoader(pdf_path)
