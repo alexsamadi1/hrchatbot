@@ -10,14 +10,27 @@ def ensure_nltk_punkt_ready():
     nltk_path = "/tmp/nltk_data"
     os.makedirs(nltk_path, exist_ok=True)
     nltk.data.path.append(nltk_path)
+
     try:
         nltk.data.find("tokenizers/punkt")
     except LookupError:
         nltk.download("punkt", download_dir=nltk_path)
+
     try:
         nltk.data.find("tokenizers/punkt_tab")
     except LookupError:
         nltk.download("punkt_tab", download_dir=nltk_path)
+
+    try:
+        nltk.data.find("taggers/averaged_perceptron_tagger")
+    except LookupError:
+        nltk.download("averaged_perceptron_tagger", download_dir=nltk_path)
+
+    try:
+        nltk.data.find("taggers/averaged_perceptron_tagger_eng")
+    except LookupError:
+        nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_path)
+
 
 ensure_nltk_punkt_ready()  # ✅ Run immediately
 
