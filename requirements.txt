@@ -19,4 +19,3 @@ rich
 unstructured==0.11.0
 python-docx
 nltk
-nltk_data
