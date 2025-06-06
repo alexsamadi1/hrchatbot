@@ -8,15 +8,19 @@ import os
 
 def ensure_nltk_punkt_ready():
     nltk_path = "/tmp/nltk_data"
-    os.environ["NLTK_DATA"] = nltk_path
     os.makedirs(nltk_path, exist_ok=True)
     nltk.data.path.append(nltk_path)
     try:
         nltk.data.find("tokenizers/punkt")
     except LookupError:
         nltk.download("punkt", download_dir=nltk_path)
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        nltk.download("punkt_tab", download_dir=nltk_path)
 
 ensure_nltk_punkt_ready()  # ✅ Run immediately
+
 DEBUG = False  # Set to True to show debug outputs
 
 # --- Page Setup ---
