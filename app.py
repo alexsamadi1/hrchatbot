@@ -72,7 +72,7 @@ if "role" not in profile or "tenure" not in profile:
 
     st.session_state.role_selection = st.radio(
         "What's your role at Innovim?",
-        ["Project Manager", "General Staff", "Executive", "Contractor or Consultant"],
+        ["Program Manager", "General Staff"],
         key="role_radio_updated"
     )
 
