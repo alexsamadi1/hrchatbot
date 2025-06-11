@@ -1,6 +1,10 @@
 import streamlit as st
 from openai import OpenAI
 from tools.embeddings import load_faiss_vectorstore
+from tools.s3_utils import upload_file_to_s3
+from tools.vectorstore_builder import rebuild_vectorstore_from_s3
+from pathlib import Path
+import uuid
 import time
 import re
 
@@ -53,12 +57,6 @@ st.markdown("""
 if "user_profile" not in st.session_state:
     st.session_state.user_profile = {}
 
-profile = st.session_state.user_profile
-
-# --- User Onboarding (Improved Flow) ---
-if "user_profile" not in st.session_state:
-    st.session_state.user_profile = {}
-
 if "role_selection" not in st.session_state:
     st.session_state.role_selection = None
 
@@ -67,6 +65,7 @@ if "tenure_selection" not in st.session_state:
 
 profile = st.session_state.user_profile
 
+# --- If user not onboarded, show onboarding screen (no sidebar) ---
 if "role" not in profile or "tenure" not in profile:
     st.markdown("## 👋 Welcome! Let’s get to know you first")
 
@@ -90,22 +89,20 @@ if "role" not in profile or "tenure" not in profile:
     else:
         st.stop()
 
+# --- Sidebar appears ONLY after onboarding ---
+
+
 # --- Load Vectorstore ---
 @st.cache_resource(show_spinner="🔍 Loading vectorstore...")
 def get_vectorstore():
     try:
-        return load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"], index_dir="faiss_index")
+        vectorstore = load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"])
+        return vectorstore
     except Exception as e:
-        st.warning("Vectorstore not found. Rebuilding it now...")
-        from tools.embeddings import build_combined_vectorstore
-        return build_combined_vectorstore(
-            pdf_path="docs/InnovimEmployeeHandbook.pdf",
-            docx_path="docs/innovim_onboarding.docx",
-            index_path="faiss_index",
-            api_key=st.secrets["OPENAI_API_KEY"]
-        )
-
-
+        st.warning(f"⚠️ Couldn’t load vectorstore from S3. Rebuilding... ({e})")
+        vectorstore = rebuild_vectorstore_from_s3()
+        return vectorstore
+    
 # ✅ Now safe to load vectorstore
 vectorstore = get_vectorstore()
 
@@ -172,8 +169,9 @@ def summarize_fallback(query, chunks, client):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
-            messages=messages
+            model="gpt-3.5-turbo",
+            messages=messages, 
+            stream=True 
         )
         return response.choices[0].message.content.strip()
 
@@ -237,42 +235,75 @@ def detect_meta_query(query):
 #         "hi", "hello"
 #     ])
 
+if "role" in profile and "tenure" in profile:
+    with st.sidebar:
+        # --- Logo ---
+        st.image("assets/innovimvector.png", use_container_width=True)
 
-# --- Sidebar ---
+        st.markdown("## 🤖 Innovim HR Assistant")
+        st.caption("_Your personal guide for Innovim HR policies & info._")
 
-with st.sidebar:
-    st.image("assets/innovimvector.png", use_container_width=True)
+        st.markdown("### 🧭 Quick Start")
+        st.markdown("""
+        Ask about:
+        - PTO / Vacation  
+        - Remote work  
+        - Benefits updates  
+        - Time tracking
+        """)
 
-    st.markdown("## 🤖 Innovim HR Assistant")
-    st.caption("_Your personal guide for Innovim HR policies & info._")
+        # --- Sample Questions ---
+        with st.expander("💬 Sample Questions", expanded=False):
+            sample_questions = [
+                "How many vacation days do I get?",
+                "What’s the policy on remote work?",
+                "How do I update my benefits info?"
+            ]
+            for i, q in enumerate(sample_questions):
+                if st.button(f"💡 {q}", key=f"sample_q_{i}"):
+                    st.session_state["example_question"] = q
 
-    st.markdown("### 🧭 Quick Start")
-    st.markdown("Ask about:\n- PTO / Vacation\n- Remote work\n- Benefits updates\n- Time tracking")
+        # --- Admin Upload Tools ---
+        with st.expander("🔒 Admin Upload Tools", expanded=False):
+            admin_code = st.text_input("Enter admin code", type="password")
 
-    st.markdown("### 💬 Sample Questions")
-    sample_questions = [
-        "How many vacation days do I get?",
-        "What’s the policy on remote work?",
-        "How do I update my benefits info?"
-    ]
-    for i, q in enumerate(sample_questions):
-        if st.button(f"💡 {q}", key=f"sample_q_{i}"):
-            st.session_state["example_question"] = q
+            if admin_code == st.secrets["ADMIN_CODE"]:
+                st.success("✅ Admin access granted")
+                uploaded_file = st.file_uploader("📤 Upload HR document", type=["pdf", "docx"])
+                if uploaded_file:
+                    unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
+                    try:
+                        upload_file_to_s3(uploaded_file, unique_filename, st.secrets["S3_DOCS_BUCKET"])
+                        st.success(f"✅ Uploaded: {uploaded_file.name}")
 
-    st.markdown("---")
+                        with st.spinner("🔄 Rebuilding knowledge base..."):
+                            doc_count, chunk_count = rebuild_vectorstore_from_s3()
+                            st.success(f"📚 Vectorstore rebuilt from {doc_count} docs ({chunk_count} chunks)")
 
-    st.markdown("### 📬 Need More Help?")
-    st.markdown("Email [hr@innovim.com](mailto:hr@innovim.com)")
+                        st.cache_resource.clear()
+                        st.rerun()
 
-    if st.button("🔄 Start Over"):
-        st.session_state.chat_history = []
-        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Upload failed: {e}")
+            else:
+                st.info("🔐 Admin tools hidden until code is entered.")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    st.markdown("### 💡 Feedback & Version")
-    st.markdown("[📣 Submit Feedback](https://docs.google.com/forms/d/e/1FAIpQLSc31lOd_KRn9mpffhQNwuthyzh1b3KTSeMGpb12hdJQ5IT_hQ/viewform?usp=dialog)")
-    st.markdown("<div style='font-size: 0.8rem; color: gray;'>🔒 Internal Use Only • Version 1.0 • Updated May 2025</div>", unsafe_allow_html=True)
+        # --- Help & Reset ---
+        st.markdown("### 📬 Need Help?")
+        st.markdown("[Email HR](mailto:hr@innovim.com)")
+
+        if st.button("🔄 Start Over"):
+            st.session_state.chat_history = []
+            st.rerun()
+
+        st.markdown("---")
+
+        # --- Footer ---
+        st.markdown("### 💡 Feedback")
+        st.markdown("[📣 Submit Feedback](https://docs.google.com/forms/d/e/1FAIpQLSc31lOd_KRn9mpffhQNwuthyzh1b3KTSeMGpb12hdJQ5IT_hQ/viewform?usp=dialog)")
+        st.markdown("<div style='font-size: 0.8rem; color: gray;'>🔒 Internal • v1.0 • Updated May 2025</div>", unsafe_allow_html=True)
 
 # --- Main Header ---
 st.markdown("<h1 style='text-align: center;'>Innovim HR Chatbot</h1>", unsafe_allow_html=True)
@@ -340,56 +371,62 @@ if user_input:
 
 with st.spinner("Searching policies..."):
     with st.chat_message("assistant"):
-        # Step 1: Show animated typing message first
+        # Step 1: Typing placeholder
         placeholder = st.empty()
         placeholder.markdown(
             "<div class='chat-bubble bot-bubble'>🤖 <span class='typing-dots'>Typing</span></div>",
             unsafe_allow_html=True
         )
 
-        # Step 2: Run similarity search and reranking
-        if not user_input or not isinstance(user_input, str) or not user_input.strip():
-            st.stop()
-        results = vectorstore.similarity_search_with_score(user_input, k=5)
+        # Step 2: Search & rerank
+        results = vectorstore.similarity_search_with_score(user_input, k=3)
         docs = [doc for doc, score in results if score >= 0.25]
         best_chunk = rerank_with_gpt(user_input, docs, client)
 
-        # Step 3: If no match found
+        # Step 3: Handle weak matches
         if not best_chunk:
             answer = "I couldn’t find a strong match in the handbook. Please try rephrasing or contact HR."
-        else:
-            try:
-                messages = [
-                    {"role": "system", "content": (
-                        f"You are Innovim’s professional HR assistant. The user is a {profile['role']} who has been with the company for {profile['tenure']}.\n"
-                        "Use this context to tailor your answer whenever possible. "
-                        "Only use the provided handbook content to answer. If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
-                    )},
-                    {"role": "user", "content": f"User question: {user_input}\n\nContext:\n{best_chunk}"}
-                ]
+            placeholder.markdown(
+                f"<div class='chat-bubble bot-bubble'>{answer}</div>",
+                unsafe_allow_html=True
+            )
+            st.session_state.chat_history.append({"role": "assistant", "content": answer})
+            st.stop()
 
-                # Step 4: Generate response
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=messages
-                )
-                draft_answer = response.choices[0].message.content
-                answer = revise_answer_with_gpt(user_input, draft_answer, client)
+        # Step 4: Generate GPT answer (no streaming)
+        messages = [
+            {"role": "system", "content": (
+                f"You are Innovim’s professional HR assistant. The user is a {profile['role']} who has been with the company for {profile['tenure']}.\n"
+                "Use this context to tailor your answer whenever possible. "
+                "Only use the provided handbook content to answer. If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
+            )},
+            {"role": "user", "content": f"User question: {user_input}\n\nContext:\n{best_chunk}"}
+        ]
 
-            except Exception as e:
-                answer = f"❌ OpenAI error: {str(e)}"
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages
+        )
+        draft_answer = response.choices[0].message.content.strip()
 
-        # Step 5: Replace placeholder with final answer
+        # Refine and animate
+        answer = revise_answer_with_gpt(user_input, draft_answer, client)
+        lines = re.split(r'(?<=[.!?])\s+', answer)
+        displayed = ""
+        for line in lines:
+            displayed += line + " "
+            placeholder.markdown(
+                f"<div class='chat-bubble bot-bubble'>{displayed.strip()}▌</div>",
+                unsafe_allow_html=True
+            )
+            time.sleep(0.8)
+
         placeholder.markdown(
-            f"<div class='chat-bubble bot-bubble'>{answer}</div>",
+            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>",
             unsafe_allow_html=True
         )
+
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
 
-    # Debug tools
-    if DEBUG:
-        with st.expander("🛠 Debug Info"):
-            st.write("Raw Retrieved Chunks", docs)
-            st.write("Selected Chunk", best_chunk)
-            st.write("Answer", answer)
+
 

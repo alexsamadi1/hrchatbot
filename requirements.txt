@@ -19,3 +19,5 @@ rich
 unstructured==0.11.0
 python-docx
 nltk
+boto3
+watchdog

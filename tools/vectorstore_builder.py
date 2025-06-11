@@ -68,3 +68,39 @@ def build_vectorstore(
 # --- Optional CLI ---
 if __name__ == "__main__":
     build_vectorstore(index_path="faiss_index_hr_combined")
+
+
+def rebuild_vectorstore_from_docs(docs_path="docs", faiss_path="faiss_index"):
+    docs_path = Path(docs_path)
+    all_docs = []
+
+    for doc_file in docs_path.glob("*"):
+        if doc_file.suffix == ".pdf":
+            loader = PyPDFLoader(str(doc_file))
+        elif doc_file.suffix == ".docx":
+            loader = UnstructuredWordDocumentLoader(str(doc_file))
+        else:
+            continue
+        all_docs.extend(loader.load())
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_documents(all_docs)
+    embeddings = get_embeddings()
+
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+    vectorstore.save_local(faiss_path)
+    return len(all_docs), len(chunks)
+
+def rebuild_vectorstore_from_s3():
+    import toml
+    from tools.embeddings import build_combined_vectorstore
+
+    secrets = toml.load(".streamlit/secrets.toml")
+
+    pdf_path = "docs/InnovimEmployeeHandbook.pdf"
+    docx_path = "docs/innovim_onboarding.docx"
+    index_path = "faiss_index"
+    api_key = secrets["OPENAI_API_KEY"]
+
+    vectorstore = build_combined_vectorstore(pdf_path, docx_path, index_path, api_key)
+    return vectorstore, len(vectorstore.docstore._dict), len(vectorstore.index_to_docstore_id)
