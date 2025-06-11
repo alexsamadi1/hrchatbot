@@ -1,6 +1,6 @@
 import streamlit as st
 from openai import OpenAI
-from utils import load_faiss_vectorstore
+from tools.embeddings import load_faiss_vectorstore
 import time
 import re
 
@@ -96,15 +96,14 @@ def get_vectorstore():
     try:
         return load_faiss_vectorstore("index", st.secrets["OPENAI_API_KEY"], index_dir="faiss_index")
     except Exception as e:
-       #st.warning("Vectorstore not found. Rebuilding it now…")
-        from tools.build_combined_vectorstore import build_vectorstore
-        vectorstore = build_vectorstore(
-            pdf_path="InnovimEmployeeHandbook.pdf",
-            docx_path="innovimnew.docx",
+        st.warning("Vectorstore not found. Rebuilding it now...")
+        from tools.embeddings import build_combined_vectorstore
+        return build_combined_vectorstore(
+            pdf_path="docs/InnovimEmployeeHandbook.pdf",
+            docx_path="docs/innovim_onboarding.docx",
             index_path="faiss_index",
             api_key=st.secrets["OPENAI_API_KEY"]
         )
-        return vectorstore  # ✅ make sure this is not returning a bool (e.g. `return vectorstore is`)
 
 
 # ✅ Now safe to load vectorstore
@@ -242,7 +241,7 @@ def detect_meta_query(query):
 # --- Sidebar ---
 
 with st.sidebar:
-    st.image("innovimvector.png", use_container_width=True)
+    st.image("assets/innovimvector.png", use_container_width=True)
 
     st.markdown("## 🤖 Innovim HR Assistant")
     st.caption("_Your personal guide for Innovim HR policies & info._")
