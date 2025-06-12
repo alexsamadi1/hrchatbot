@@ -3,15 +3,21 @@ from openai import OpenAI
 from tools.embeddings import load_faiss_vectorstore
 from tools.s3_utils import upload_file_to_s3
 from tools.vectorstore_builder import rebuild_vectorstore_from_s3
+from tools.log_utils import ensure_log_file_exists, log_query_to_csv
+from tools.analytics_dashboard import show_analytics_dashboard
 from pathlib import Path
 import uuid
 import time
 import re
 
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+
 DEBUG = False  # Set to True to show debug outputs
 
 # --- Page Setup ---
 st.set_page_config(page_title="Innovim HR Chatbot", page_icon="📘", layout="wide")
+ensure_log_file_exists()
 
 # --- Global CSS Styling ---
 st.markdown("""
@@ -89,7 +95,10 @@ if "role" not in profile or "tenure" not in profile:
     else:
         st.stop()
 
-# --- Sidebar appears ONLY after onboarding ---
+if st.session_state.get("show_analytics", False):
+    from tools.analytics_dashboard import show_analytics_dashboard
+    show_analytics_dashboard()
+    st.stop()
 
 
 # --- Load Vectorstore ---
@@ -227,14 +236,6 @@ def detect_meta_query(query):
 
     return any(re.match(pattern, q) for pattern in meta_patterns)
 
-# def detect_meta_query(query):
-#     q = query.lower()
-#     return any(phrase in q for phrase in [
-#         "what can you do", "how do you work", "can i ask you",
-#         "what is this", "how can you help", "help me", "who are you",
-#         "hi", "hello"
-#     ])
-
 if "role" in profile and "tenure" in profile:
     with st.sidebar:
         # --- Logo ---
@@ -267,8 +268,14 @@ if "role" in profile and "tenure" in profile:
         with st.expander("🔒 Admin Upload Tools", expanded=False):
             admin_code = st.text_input("Enter admin code", type="password")
 
+            # --- Grant access if correct
             if admin_code == st.secrets["ADMIN_CODE"]:
-                st.success("✅ Admin access granted")
+                if not st.session_state.is_admin:
+                    st.success("✅ Admin access granted")
+                st.session_state.is_admin = True
+
+            # --- Show upload tools only if admin verified
+            if st.session_state.get("is_admin", False):
                 uploaded_file = st.file_uploader("📤 Upload HR document", type=["pdf", "docx"])
                 if uploaded_file:
                     unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
@@ -282,11 +289,19 @@ if "role" in profile and "tenure" in profile:
 
                         st.cache_resource.clear()
                         st.rerun()
-
                     except Exception as e:
                         st.error(f"❌ Upload failed: {e}")
+            elif admin_code:
+                st.warning("❌ Incorrect code")
             else:
                 st.info("🔐 Admin tools hidden until code is entered.")
+
+        # ✅ Admin-only button to open Analytics Dashboard
+        if st.session_state.get("is_admin", False):
+            st.markdown("---")
+            st.markdown("### 📊 Admin Tools")
+            if st.sidebar.button("📊 Open Analytics Dashboard"):
+                st.session_state.show_analytics = True
 
         st.markdown("---")
 
@@ -391,6 +406,7 @@ with st.spinner("Searching policies..."):
                 unsafe_allow_html=True
             )
             st.session_state.chat_history.append({"role": "assistant", "content": answer})
+            log_query_to_csv(user_input, answer)
             st.stop()
 
         # Step 4: Generate GPT answer (no streaming)

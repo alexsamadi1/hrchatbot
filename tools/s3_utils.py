@@ -42,3 +42,10 @@ def download_faiss_index_from_s3(local_path="/tmp/faiss_index"):
         s3.download_file(bucket, key, dest_path)
 
     return local_path
+
+def download_file_from_s3(s3_key, bucket_name, local_path=None):
+    """Download a file from S3 to the local project directory (or /tmp)."""
+    if local_path is None:
+        local_path = s3_key.split("/")[-1]
+    s3.download_file(bucket_name, s3_key, local_path)
+    return local_path
