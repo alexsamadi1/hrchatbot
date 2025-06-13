@@ -10,11 +10,14 @@ import nltk
 import uuid
 import time
 import re
+import os
+
+os.environ['NLTK_DATA'] = os.path.expanduser('~/nltk_data')
 
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
-    nltk.download('punkt')
+    nltk.download('punkt', download_dir=os.path.expanduser('~/nltk_data'))
 
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
