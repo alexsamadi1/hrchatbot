@@ -6,9 +6,15 @@ from tools.vectorstore_builder import rebuild_vectorstore_from_s3
 from tools.log_utils import ensure_log_file_exists, log_query_to_csv
 from tools.analytics_dashboard import show_analytics_dashboard
 from pathlib import Path
+import nltk
 import uuid
 import time
 import re
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
