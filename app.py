@@ -12,13 +12,14 @@ import time
 import re
 import os
 
+# --- Page Setup ---
+st.set_page_config(page_title="Innovim HR Chatbot", page_icon="📘", layout="wide")
+ensure_log_file_exists()
 
 # Ensure all necessary NLTK resources are available
 nltk_dependencies = [
     'punkt',
-    'punkt_tab',
-    'averaged_perceptron_tagger',
-    'averaged_perceptron_tagger_eng'
+    'averaged_perceptron_tagger'
 ]
 
 for resource in nltk_dependencies:
@@ -26,7 +27,7 @@ for resource in nltk_dependencies:
         nltk.data.find(f'tokenizers/{resource}') if "punkt" in resource else nltk.data.find(f'taggers/{resource}')
     except LookupError:
         nltk.download(resource)
-        
+
 
 os.environ['NLTK_DATA'] = os.path.expanduser('~/nltk_data')
 
@@ -35,9 +36,6 @@ if "is_admin" not in st.session_state:
 
 DEBUG = False  # Set to True to show debug outputs
 
-# --- Page Setup ---
-st.set_page_config(page_title="Innovim HR Chatbot", page_icon="📘", layout="wide")
-ensure_log_file_exists()
 
 # --- Global CSS Styling ---
 st.markdown("""
