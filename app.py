@@ -22,14 +22,15 @@ nltk_dependencies = [
     'averaged_perceptron_tagger'
 ]
 
-for resource in nltk_dependencies:
-    try:
-        nltk.data.find(f'tokenizers/{resource}') if "punkt" in resource else nltk.data.find(f'taggers/{resource}')
-    except LookupError:
-        nltk.download(resource)
+def ensure_nltk_resources(resources):
+    for res in resources:
+        try:
+            nltk.data.find(f'tokenizers/{res}' if 'punkt' in res else f'taggers/{res}')
+        except LookupError:
+            nltk.download(res, quiet=True)
 
+ensure_nltk_resources(['punkt', 'averaged_perceptron_tagger'])
 
-os.environ['NLTK_DATA'] = os.path.expanduser('~/nltk_data')
 
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
