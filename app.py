@@ -13,11 +13,12 @@ import re
 import os
 
 
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-    
+for resource in ['punkt', 'punkt_tab']:
+    try:
+        nltk.data.find(f'tokenizers/{resource}')
+    except LookupError:
+        nltk.download(resource)
+        
 os.environ['NLTK_DATA'] = os.path.expanduser('~/nltk_data')
 
 if "is_admin" not in st.session_state:
