@@ -13,12 +13,21 @@ import re
 import os
 
 
-for resource in ['punkt', 'punkt_tab']:
+# Ensure all necessary NLTK resources are available
+nltk_dependencies = [
+    'punkt',
+    'punkt_tab',
+    'averaged_perceptron_tagger',
+    'averaged_perceptron_tagger_eng'
+]
+
+for resource in nltk_dependencies:
     try:
-        nltk.data.find(f'tokenizers/{resource}')
+        nltk.data.find(f'tokenizers/{resource}') if "punkt" in resource else nltk.data.find(f'taggers/{resource}')
     except LookupError:
         nltk.download(resource)
         
+
 os.environ['NLTK_DATA'] = os.path.expanduser('~/nltk_data')
 
 if "is_admin" not in st.session_state:
