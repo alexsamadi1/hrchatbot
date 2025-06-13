@@ -278,24 +278,27 @@ if "role" in profile and "tenure" in profile:
             if st.session_state.get("is_admin", False):
                 uploaded_file = st.file_uploader("📤 Upload HR document", type=["pdf", "docx"])
                 if uploaded_file:
-                    unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
-                    try:
-                        upload_file_to_s3(uploaded_file, unique_filename, st.secrets["S3_DOCS_BUCKET"])
-                        st.success(f"✅ Uploaded: {uploaded_file.name}")
+                    if "last_uploaded_file" not in st.session_state:
+                        st.session_state.last_uploaded_file = None
 
-                        with st.spinner("🔄 Rebuilding knowledge base..."):
-                            doc_count, chunk_count = rebuild_vectorstore_from_s3()
-                            st.success(f"📚 Vectorstore rebuilt from {doc_count} docs ({chunk_count} chunks)")
+                    if uploaded_file.name != st.session_state.last_uploaded_file:
+                        unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
+                        try:
+                            upload_file_to_s3(uploaded_file, unique_filename, st.secrets["S3_DOCS_BUCKET"])
+                            st.success(f"✅ Uploaded: {uploaded_file.name}")
 
-                        st.cache_resource.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Upload failed: {e}")
-            elif admin_code:
-                st.warning("❌ Incorrect code")
-            else:
-                st.info("🔐 Admin tools hidden until code is entered.")
+                            with st.spinner("🔄 Rebuilding knowledge base..."):
+                                doc_count, chunk_count = rebuild_vectorstore_from_s3()
+                                st.success(f"📚 Vectorstore rebuilt from {doc_count} docs ({chunk_count} chunks)")
 
+                            st.session_state.last_uploaded_file = uploaded_file.name
+                            st.cache_resource.clear()
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"❌ Upload failed: {e}")
+                    else:
+                        st.info("ℹ️ This file was already uploaded in this session.")
         # ✅ Admin-only button to open Analytics Dashboard
         if st.session_state.get("is_admin", False):
             st.markdown("---")

@@ -5,6 +5,10 @@ from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDo
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
+import tempfile
+import boto3
+import json
+import hashlib
 
 # --- Load API Key ---
 def get_openai_api_key():
@@ -24,7 +28,7 @@ def build_vectorstore(
     print("🔍 Checking for existing FAISS index...")
     index_file = Path(index_path) / "index.faiss"
 
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key or get_openai_api_key())
+    embeddings = OpenAIEmbeddings(openai_api_key=get_openai_api_key())
 
     if index_file.exists():
         print(f"✅ Existing vectorstore found at '{index_path}/'. Loading...")
@@ -85,22 +89,80 @@ def rebuild_vectorstore_from_docs(docs_path="docs", faiss_path="faiss_index"):
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(all_docs)
-    embeddings = get_embeddings()
+    embeddings = OpenAIEmbeddings(openai_api_key=get_openai_api_key())
 
     vectorstore = FAISS.from_documents(chunks, embeddings)
     vectorstore.save_local(faiss_path)
     return len(all_docs), len(chunks)
 
+
 def rebuild_vectorstore_from_s3():
-    import toml
-    from tools.embeddings import build_combined_vectorstore
+    print("🔄 Starting vectorstore rebuild from S3...")
 
-    secrets = toml.load(".streamlit/secrets.toml")
+    s3 = boto3.client("s3")
+    bucket = "innovim-hr-docs-1"
+    faiss_path = "faiss_index/index"
+    processed_manifest_path = Path("faiss_index/processed_hashes.json")
 
-    pdf_path = "docs/InnovimEmployeeHandbook.pdf"
-    docx_path = "docs/innovim_onboarding.docx"
-    index_path = "faiss_index"
-    api_key = secrets["OPENAI_API_KEY"]
+    # Load previously processed hashes
+    if processed_manifest_path.exists():
+        with open(processed_manifest_path, "r") as f:
+            processed_hashes = set(json.load(f))
+    else:
+        processed_hashes = set()
 
-    vectorstore = build_combined_vectorstore(pdf_path, docx_path, index_path, api_key)
-    return vectorstore, len(vectorstore.docstore._dict), len(vectorstore.index_to_docstore_id)
+    response = s3.list_objects_v2(Bucket=bucket)
+    if "Contents" not in response:
+        print("❌ No documents found in S3.")
+        return 0, 0
+
+    docs = []
+    new_hashes = []
+
+    for obj in response["Contents"]:
+        key = obj["Key"]
+        if not key.endswith((".pdf", ".docx")):
+            continue
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            s3.download_file(bucket, key, tmp_file.name)
+            print(f"⬇️ Downloaded: {key}")
+
+            with open(tmp_file.name, "rb") as f:
+                file_bytes = f.read()
+                file_hash = hashlib.md5(file_bytes).hexdigest()
+
+            if file_hash in processed_hashes:
+                print(f"⏭ Skipping duplicate content for: {key}")
+                continue
+
+            if key.endswith(".pdf"):
+                loader = PyPDFLoader(tmp_file.name)
+            else:
+                loader = UnstructuredWordDocumentLoader(tmp_file.name)
+
+            loaded_docs = loader.load()
+            print(f"📄 Loaded {len(loaded_docs)} pages from {key}")
+            docs.extend(loaded_docs)
+            new_hashes.append(file_hash)
+
+    if not docs:
+        print("✅ No new files to process.")
+        return 0, 0
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=750, chunk_overlap=100)
+    chunks = splitter.split_documents(docs)
+    print(f"🔬 Created {len(chunks)} chunks total.")
+
+    embeddings = OpenAIEmbeddings(openai_api_key=get_openai_api_key())
+    vectorstore = FAISS.from_documents(chunks, embeddings)
+    os.makedirs("faiss_index", exist_ok=True)
+    vectorstore.save_local(faiss_path)
+
+    # Save updated manifest
+    processed_hashes.update(new_hashes)
+    with open(processed_manifest_path, "w") as f:
+        json.dump(list(processed_hashes), f)
+
+    print(f"✅ Vectorstore saved to {faiss_path}")
+    return len(new_hashes), len(chunks)
