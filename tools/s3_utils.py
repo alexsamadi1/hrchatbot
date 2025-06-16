@@ -9,9 +9,8 @@ s3 = boto3.client(
     aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
     region_name=st.secrets["AWS_REGION"]
 )
-
-def upload_file_to_s3(file_obj, filename, bucket_name):
-    s3.upload_fileobj(file_obj, bucket_name, filename)
+def upload_file_to_s3(file, filename, bucket):
+    s3.upload_fileobj(file, bucket, filename)
 
 def list_files_in_bucket(bucket_name):
     response = s3.list_objects_v2(Bucket=bucket_name)

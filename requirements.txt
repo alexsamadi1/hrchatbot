@@ -21,6 +21,7 @@ python-docx
 nltk
 boto3
 watchdog
+python-docx
 
 # Analytics + Plotting
 pandas
