@@ -418,12 +418,27 @@ with st.spinner("Searching policies..."):
         )
 
         # Step 2: Search & rerank
-        results = vectorstore.similarity_search_with_score(user_input, k=3)
-        docs = [doc for doc, score in results if score >= 0.25]
-        best_chunk = rerank_with_gpt(user_input, docs, client)
+       # Step 2: Search top chunks and rerank
+        results = vectorstore.similarity_search_with_score(user_input, k=5)
+        docs = [doc for doc, score in results if score >= 0.3]
+        chunks = docs[:3]  # Top 3 relevant chunks
+
+        # Rerank with GPT
+        reranked_chunk = rerank_with_gpt(user_input, chunks, client)
+
+        if reranked_chunk and "Chunk" not in reranked_chunk:
+            best_chunk = reranked_chunk
+        else:
+            best_chunk = None  # Will use fallback
+
+        # Build combined context
+        full_context = "\n\n".join([
+            f"[Source: {doc.metadata.get('source', 'Unknown')}]\n{doc.page_content.strip()}"
+            for doc in docs
+        ])
 
         # Step 3: Handle weak matches
-        if not best_chunk:
+        if not docs:
             answer = "I couldn’t find a strong match in the handbook. Please try rephrasing or contact HR."
             placeholder.markdown(
                 f"<div class='chat-bubble bot-bubble'>{answer}</div>",
@@ -449,14 +464,39 @@ with st.spinner("Searching policies..."):
             st.stop()
 
         # Step 4: Generate GPT answer (no streaming)
-        messages = [
-            {"role": "system", "content": (
-                f"You are Innovim’s professional HR assistant. The user is a {profile['role']} who has been with the company for {profile['tenure']}.\n"
-                "Use this context to tailor your answer whenever possible. "
-                "Only use the provided handbook content to answer. If unclear, say: 'I couldn’t find a specific policy. Please check with HR.'"
-            )},
-            {"role": "user", "content": f"User question: {user_input}\n\nContext:\n{best_chunk}"}
-        ]
+        if best_chunk:
+            # Direct answer with source
+            source_title = docs[0].metadata.get("source", "Unknown Source")
+            messages = [
+                {"role": "system", "content": (
+                    f"You are Innovim’s professional HR assistant. The user is a {profile['role']} "
+                    f"who has been with the company for {profile['tenure']}.\n\n"
+                    "Your job is to answer questions using the provided policy excerpt."
+                    "\n\nYour response must:"
+                    "\n- Clearly and directly answer the question"
+                    "\n- Quote 1–2 relevant sentences from the chunk"
+                    "\n- Attribute them (e.g., 'According to [Source Name]...')"
+                    "\n- Say if the excerpt doesn't fully answer it"
+                )},
+                {"role": "user", "content": (
+                    f"User question: {user_input}\n\n"
+                    f"Relevant excerpt (from {source_title}):\n\n{reranked_chunk}"
+                )}
+            ]
+        else:
+            # Fallback to summarize multiple chunks
+            fallback_context = "\n\n".join([chunk.page_content[:500] for chunk in chunks])
+            messages = [
+                {"role": "system", "content": (
+                    "You are a helpful HR assistant trained on Innovim documents. The question wasn’t answered clearly by any one excerpt, "
+                    "but here are some partial chunks. Summarize a helpful answer based on what you can."
+                    "\nIf unsure, advise the user to contact HR."
+                )},
+                {"role": "user", "content": (
+                    f"User question: {user_input}\n\n"
+                    f"Context snippets:\n{fallback_context}"
+                )}
+            ]
 
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
