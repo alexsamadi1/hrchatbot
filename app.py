@@ -5,7 +5,11 @@ from tools.s3_utils import upload_file_to_s3
 from tools.vectorstore_builder import rebuild_vectorstore_from_s3
 from tools.log_utils import ensure_log_file_exists, log_query_to_csv
 from tools.analytics_dashboard import show_analytics_dashboard
+from tools.filename_generator import generate_smart_filename, extract_text_from_docx
+from io import BytesIO
+from docx import Document
 from pathlib import Path
+from tools.filename_generator import generate_smart_filename, extract_text_from_docx
 import nltk
 import uuid
 import time
@@ -256,6 +260,7 @@ def detect_meta_query(query):
     return any(re.match(pattern, q) for pattern in meta_patterns)
 
 if "role" in profile and "tenure" in profile:
+
     with st.sidebar:
         # --- Logo ---
         st.image("assets/innovimvector.png", use_container_width=True)
@@ -301,10 +306,17 @@ if "role" in profile and "tenure" in profile:
                         st.session_state.last_uploaded_file = None
 
                     if uploaded_file.name != st.session_state.last_uploaded_file:
-                        unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
                         try:
-                            upload_file_to_s3(uploaded_file, unique_filename, st.secrets["S3_DOCS_BUCKET"])
-                            st.success(f"✅ Uploaded: {uploaded_file.name}")
+                            # --- Extract content from .docx for GPT-based filename
+                            if uploaded_file.name.endswith(".docx"):
+                                raw_text = extract_text_from_docx(uploaded_file)
+                                smart_filename = generate_smart_filename(raw_text, uploaded_file.name)
+                            else:
+                                smart_filename = uploaded_file.name  # fallback
+
+                            # --- Upload with smart name
+                            upload_file_to_s3(BytesIO(uploaded_file.getbuffer()), smart_filename, st.secrets["S3_DOCS_BUCKET"])
+                            st.success(f"✅ Uploaded as: `{smart_filename}`")
 
                             with st.spinner("🔄 Rebuilding knowledge base..."):
                                 doc_count, chunk_count = rebuild_vectorstore_from_s3()
@@ -318,14 +330,14 @@ if "role" in profile and "tenure" in profile:
                             st.error(f"❌ Upload failed: {e}")
                     else:
                         st.info("ℹ️ This file was already uploaded in this session.")
-        # ✅ Admin-only button to open Analytics Dashboard
-        if st.session_state.get("is_admin", False):
-            st.markdown("---")
-            st.markdown("### 📊 Admin Tools")
-            if st.sidebar.button("📊 Open Analytics Dashboard"):
-                st.session_state.show_analytics = True
 
-        st.markdown("---")
+                # ✅ Admin-only button to open Analytics Dashboard
+                st.markdown("---")
+                st.markdown("### 📊 Admin Tools")
+                if st.button("📊 Open Analytics Dashboard"):
+                    st.session_state.show_analytics = True
+
+                st.markdown("---")
 
         # --- Help & Reset ---
         st.markdown("### 📬 Need Help?")
@@ -396,16 +408,6 @@ if user_input:
     st.chat_message("user").markdown(f"<div class='chat-bubble user-bubble'>{user_input}</div>", unsafe_allow_html=True)
     st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-    # # Meta query response
-    # if detect_meta_query(user_input):
-    #     with st.chat_message("assistant"):
-    #         st.markdown(
-    #             f"<div class='chat-bubble bot-bubble'>Hi! 👋 I'm Innovim’s internal HR assistant. I can help answer questions about policies, benefits, timekeeping, telework, and more — all based on our official employee handbook.<br><br>Try asking something like:<br>• How many vacation days do I get?<br>• What’s the policy on remote work?<br>• What happens if I forget to log my time?</div>",
-    #             unsafe_allow_html=True
-    #         )
-    #     st.session_state.chat_history.append({"role": "assistant", "content": "Hi! 👋 I'm Innovim’s internal HR assistant..."})
-    #     st.stop()
-
 with st.spinner("Searching policies..."):
     with st.chat_message("assistant"):
         # Step 1: Typing placeholder
@@ -428,7 +430,22 @@ with st.spinner("Searching policies..."):
                 unsafe_allow_html=True
             )
             st.session_state.chat_history.append({"role": "assistant", "content": answer})
-            log_query_to_csv(user_input, answer)
+
+            profile = st.session_state.get("user_profile", {})
+            user_role = profile.get("role")
+            user_tenure = profile.get("tenure")
+            source_titles = [doc.metadata.get("source", "unknown") for doc in docs]
+
+            log_query_to_csv(
+                question=user_input,
+                response=answer,
+                fallback=True,
+                response_type="summary",
+                user_role=user_role,
+                user_tenure=user_tenure,
+                source_docs=source_titles
+            )
+
             st.stop()
 
         # Step 4: Generate GPT answer (no streaming)
@@ -449,8 +466,23 @@ with st.spinner("Searching policies..."):
 
         # Refine and animate
         answer = revise_answer_with_gpt(user_input, draft_answer, client)
+        # Collect metadata for logging
+        profile = st.session_state.get("user_profile", {})
+        user_role = profile.get("role")
+        user_tenure = profile.get("tenure")
+        source_titles = [doc.metadata.get("source", "unknown") for doc in docs]
+        log_query_to_csv(
+            question=user_input,
+            response=answer,
+            fallback=False,
+            response_type="direct",
+            user_role=user_role,
+            user_tenure=user_tenure,
+            source_docs=source_titles
+        )
         lines = re.split(r'(?<=[.!?])\s+', answer)
         displayed = ""
+
         for line in lines:
             displayed += line + " "
             placeholder.markdown(
@@ -458,6 +490,15 @@ with st.spinner("Searching policies..."):
                 unsafe_allow_html=True
             )
             time.sleep(0.8)
+
+        # 👇 Now add the feedback widget AFTER full response is displayed
+        placeholder.markdown(
+            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>",
+            unsafe_allow_html=True
+        )
+
+        feedback_key = f"feedback_{len(st.session_state.chat_history)}"
+        feedback = st.radio("Was this helpful?", ["👍", "👎"], key=feedback_key, horizontal=True)
 
         placeholder.markdown(
             f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>",
