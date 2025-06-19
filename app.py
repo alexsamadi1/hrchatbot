@@ -417,11 +417,22 @@ with st.spinner("Searching policies..."):
             unsafe_allow_html=True
         )
 
-        # Step 2: Search & rerank
-       # Step 2: Search top chunks and rerank
+        # Step 2: Search top chunks and rerank
         results = vectorstore.similarity_search_with_score(user_input, k=5)
         docs = [doc for doc, score in results if score >= 0.3]
-        chunks = docs[:3]  # Top 3 relevant chunks
+        chunks = docs[:3]
+
+        # Only add caption if docs exist
+        if docs:
+            doc_metadata = docs[0].metadata
+            source = doc_metadata.get("source", "Unknown Document")
+            page = doc_metadata.get("page")
+            source_citation = f"{source}, page {page}" if page else source
+
+            chunk_text_full = docs[0].page_content.strip()
+
+        with st.expander(f"🔍 {source_citation} — click to view full source chunk"):
+            st.markdown(chunk_text_full)
 
         # Rerank with GPT
         reranked_chunk = rerank_with_gpt(user_input, chunks, client)
@@ -458,7 +469,8 @@ with st.spinner("Searching policies..."):
                 response_type="summary",
                 user_role=user_role,
                 user_tenure=user_tenure,
-                source_docs=source_titles
+                source_docs=source_titles,
+                feedback=""
             )
 
             st.stop()
@@ -466,22 +478,30 @@ with st.spinner("Searching policies..."):
         # Step 4: Generate GPT answer (no streaming)
         if best_chunk:
             # Direct answer with source
-            source_title = docs[0].metadata.get("source", "Unknown Source")
+            doc_metadata = docs[0].metadata
+            source = doc_metadata.get("source", "Unknown Document")
+            page = doc_metadata.get("page")
+            source_citation = f"{source}, page {page}" if page else source
+
             messages = [
-                {"role": "system", "content": (
-                    f"You are Innovim’s professional HR assistant. The user is a {profile['role']} "
-                    f"who has been with the company for {profile['tenure']}.\n\n"
-                    "Your job is to answer questions using the provided policy excerpt."
-                    "\n\nYour response must:"
-                    "\n- Clearly and directly answer the question"
-                    "\n- Quote 1–2 relevant sentences from the chunk"
-                    "\n- Attribute them (e.g., 'According to [Source Name]...')"
-                    "\n- Say if the excerpt doesn't fully answer it"
-                )},
-                {"role": "user", "content": (
-                    f"User question: {user_input}\n\n"
-                    f"Relevant excerpt (from {source_title}):\n\n{reranked_chunk}"
-                )}
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are Innovim’s professional HR assistant. The user is a {profile['role']} "
+                        f"with {profile['tenure']} at the company.\n\n"
+                        "Your job is to clearly answer the user's HR question using the excerpt provided."
+                        "\n\nIf you quote directly from the source, attribute it using this format:"
+                        f" 'According to {source_citation}, ...'.\n\n"
+                        "Be helpful and professional, and if unsure, suggest contacting HR."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"User question: {user_input}\n\n"
+                        f"Relevant excerpt (from {source_citation}):\n\n{reranked_chunk}"
+                    )
+                }
             ]
         else:
             # Fallback to summarize multiple chunks
@@ -532,8 +552,24 @@ with st.spinner("Searching policies..."):
             time.sleep(0.8)
 
         # 👇 Now add the feedback widget AFTER full response is displayed
+        source_note = ""
+        if source_titles:
+            # Show tooltip per source with hidden chunk preview
+            tooltip_chunks = ""
+            for i, doc in enumerate(docs):
+                source_name = doc.metadata.get("source", f"Document {i+1}")
+                chunk_text = doc.page_content.strip().replace("\n", " ")
+                tooltip_chunks += f"""
+                <div style="margin-top: 6px;">
+                    📄 <b>{source_name}</b>
+                    <div style="font-size: 0.8em; color: gray; background-color: #f9f9f9; padding: 8px; border-radius: 6px; margin-top: 2px;">
+                        {chunk_text[:600]}{"..." if len(chunk_text) > 600 else ""}
+                    </div>
+                </div>
+                """
+
         placeholder.markdown(
-            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>",
+            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>{source_note}",
             unsafe_allow_html=True
         )
 
