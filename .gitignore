@@ -21,3 +21,6 @@ __pycache__/
 # --- VS Code workspace ---
 .vscode/
 *.code-workspace
+
+# --- Query logs ---
+query_logs.csv
