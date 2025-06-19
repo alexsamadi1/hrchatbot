@@ -1,3 +1,4 @@
+
 import streamlit as st
 from openai import OpenAI
 from tools.embeddings import load_faiss_vectorstore
@@ -431,8 +432,8 @@ with st.spinner("Searching policies..."):
 
             chunk_text_full = docs[0].page_content.strip()
 
-        with st.expander(f"🔍 {source_citation} — click to view full source chunk"):
-            st.markdown(chunk_text_full)
+      #  with st.expander(f"🔍 {source_citation} — click to view full source chunk"):
+        #    st.markdown(chunk_text_full)
 
         # Rerank with GPT
         reranked_chunk = rerank_with_gpt(user_input, chunks, client)
@@ -489,9 +490,8 @@ with st.spinner("Searching policies..."):
                     "content": (
                         f"You are Innovim’s professional HR assistant. The user is a {profile['role']} "
                         f"with {profile['tenure']} at the company.\n\n"
-                        "Your job is to clearly answer the user's HR question using the excerpt provided."
-                        "\n\nIf you quote directly from the source, attribute it using this format:"
-                        f" 'According to {source_citation}, ...'.\n\n"
+                       "Your job is to clearly answer the user's HR question using the excerpt provided. "
+                        "If you're unsure, advise the user to contact HR."
                         "Be helpful and professional, and if unsure, suggest contacting HR."
                     )
                 },
@@ -552,24 +552,24 @@ with st.spinner("Searching policies..."):
             time.sleep(0.8)
 
         # 👇 Now add the feedback widget AFTER full response is displayed
-        source_note = ""
-        if source_titles:
+       # source_note = ""
+      #  if source_titles:
             # Show tooltip per source with hidden chunk preview
-            tooltip_chunks = ""
-            for i, doc in enumerate(docs):
-                source_name = doc.metadata.get("source", f"Document {i+1}")
-                chunk_text = doc.page_content.strip().replace("\n", " ")
-                tooltip_chunks += f"""
-                <div style="margin-top: 6px;">
-                    📄 <b>{source_name}</b>
-                    <div style="font-size: 0.8em; color: gray; background-color: #f9f9f9; padding: 8px; border-radius: 6px; margin-top: 2px;">
-                        {chunk_text[:600]}{"..." if len(chunk_text) > 600 else ""}
-                    </div>
-                </div>
-                """
+           # tooltip_chunks = ""
+           # for i, doc in enumerate(docs):
+           #     source_name = doc.metadata.get("source", f"Document {i+1}")
+           #     chunk_text = doc.page_content.strip().replace("\n", " ")
+            #    tooltip_chunks += f"""
+            #    <div style="margin-top: 6px;">
+            #        📄 <b>{source_name}</b>
+             #       <div style="font-size: 0.8em; color: gray; background-color: #f9f9f9; padding: 8px; border-radius: 6px; margin-top: 2px;">
+             #           {chunk_text[:600]}{"..." if len(chunk_text) > 600 else ""}
+            #        </div>
+             #   </div>
+           #     """
 
         placeholder.markdown(
-            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>{source_note}",
+            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>",
             unsafe_allow_html=True
         )
 
@@ -582,5 +582,3 @@ with st.spinner("Searching policies..."):
         )
 
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
-
-
