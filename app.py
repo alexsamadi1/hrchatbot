@@ -68,18 +68,24 @@ st.markdown("""
   align-self: flex-start;
 }
     
-.typing-dots::after {
-  content: '';
+.dots {
   display: inline-block;
-  animation: dots 1.2s steps(3, end) infinite;
+  width: 1em;
+  text-align: left;
 }
 
-@keyframes dots {
-  0% { content: ''; }
-  33% { content: '.'; }
-  66% { content: '..'; }
+.dots::after {
+  content: '...';
+  animation: dotsAnim 1.5s steps(3, end) infinite;
+}
+
+@keyframes dotsAnim {
+  0%   { content: ''; }
+  33%  { content: '.'; }
+  66%  { content: '..'; }
   100% { content: '...'; }
 }
+            
 </style>
 """, unsafe_allow_html=True)
 
@@ -261,99 +267,65 @@ def detect_meta_query(query):
     return any(re.match(pattern, q) for pattern in meta_patterns)
 
 if "role" in profile and "tenure" in profile:
-
     with st.sidebar:
-        # --- Logo ---
+        # --- Branding ---
         st.image("assets/innovimvector.png", use_container_width=True)
+        st.markdown("### Innovim HR Assistant")
+            # --- User Info Display ---
+        profile = st.session_state.get("user_profile", {})
+        role = profile.get("role", "Unknown Role")
+        tenure = profile.get("tenure", "Unknown Tenure")
 
-        st.markdown("## 🤖 Innovim HR Assistant")
-        st.caption("_Your personal guide for Innovim HR policies & info._")
+        st.markdown(f"**👤 Role:** {role}")
+        st.markdown(f"**📆 Tenure:** {tenure}")
+        st.caption("_Quick answers to your HR questions._")
 
-        st.markdown("### 🧭 Quick Start")
-        st.markdown("""
-        Ask about:
-        - PTO / Vacation  
-        - Remote work  
-        - Benefits updates  
-        - Time tracking
-        """)
+        # --- Core Usage Info ---
+        with st.expander("ℹ️ How to Use & Support", expanded=False):
+            st.markdown("- Ask clear HR-related questions (e.g. “How much PTO do I get?”)")
+            st.markdown("- Topics: PTO, FSA, onboarding, policies")
+            st.markdown("- Answers come from official HR documents")
+            st.markdown("---")
+            st.markdown("[📨 Contact HR](mailto:mkramer@innovim.com)")
+            st.markdown("[📣 Submit Feedback](https://docs.google.com/forms/d/e/1FAIpQLSc31lOd_KRn9mpffhQNwuthyzh1b3KTSeMGpb12hdJQ5IT_hQ/viewform?usp=dialog)")
 
-        # --- Sample Questions ---
-        with st.expander("💬 Sample Questions", expanded=False):
-            sample_questions = [
-                "How many vacation days do I get?",
-                "What’s the policy on remote work?",
-                "How do I update my benefits info?"
-            ]
-            for i, q in enumerate(sample_questions):
-                if st.button(f"💡 {q}", key=f"sample_q_{i}"):
-                    st.session_state["example_question"] = q
-
-        # --- Admin Upload Tools ---
-        with st.expander("🔒 Admin Upload Tools", expanded=False):
-            admin_code = st.text_input("Enter admin code", type="password")
-
-            # --- Grant access if correct
+        # --- Admin Tools (Lower Priority) ---
+        with st.expander("🔒 Admin Tools"):
+            admin_code = st.text_input("Admin code", type="password")
             if admin_code == st.secrets["ADMIN_CODE"]:
-                if not st.session_state.is_admin:
-                    st.success("✅ Admin access granted")
                 st.session_state.is_admin = True
+                st.success("Admin access granted")
 
-            # --- Show upload tools only if admin verified
             if st.session_state.get("is_admin", False):
-                uploaded_file = st.file_uploader("📤 Upload HR document", type=["pdf", "docx"])
+                uploaded_file = st.file_uploader("Upload HR doc (.pdf/.docx)", type=["pdf", "docx"])
                 if uploaded_file:
-                    if "last_uploaded_file" not in st.session_state:
-                        st.session_state.last_uploaded_file = None
-
-                    if uploaded_file.name != st.session_state.last_uploaded_file:
+                    if uploaded_file.name != st.session_state.get("last_uploaded_file"):
                         try:
-                            # --- Extract content from .docx for GPT-based filename
-                            if uploaded_file.name.endswith(".docx"):
-                                raw_text = extract_text_from_docx(uploaded_file)
-                                smart_filename = generate_smart_filename(raw_text, uploaded_file.name)
-                            else:
-                                smart_filename = uploaded_file.name  # fallback
-
-                            # --- Upload with smart name
+                            raw_text = extract_text_from_docx(uploaded_file) if uploaded_file.name.endswith(".docx") else ""
+                            smart_filename = generate_smart_filename(raw_text, uploaded_file.name)
                             upload_file_to_s3(BytesIO(uploaded_file.getbuffer()), smart_filename, st.secrets["S3_DOCS_BUCKET"])
-                            st.success(f"✅ Uploaded as: `{smart_filename}`")
+                            st.success(f"Uploaded as `{smart_filename}`")
 
-                            with st.spinner("🔄 Rebuilding knowledge base..."):
+                            with st.spinner("Rebuilding knowledge base..."):
                                 doc_count, chunk_count = rebuild_vectorstore_from_s3()
-                                st.success(f"📚 Vectorstore rebuilt from {doc_count} docs ({chunk_count} chunks)")
+                                st.success(f"Updated with {doc_count} docs ({chunk_count} chunks)")
 
                             st.session_state.last_uploaded_file = uploaded_file.name
                             st.cache_resource.clear()
                             st.rerun()
-
                         except Exception as e:
-                            st.error(f"❌ Upload failed: {e}")
+                            st.error(f"Upload failed: {e}")
                     else:
-                        st.info("ℹ️ This file was already uploaded in this session.")
+                        st.info("File already uploaded.")
 
-                # ✅ Admin-only button to open Analytics Dashboard
-                st.markdown("---")
-                st.markdown("### 📊 Admin Tools")
-                if st.button("📊 Open Analytics Dashboard"):
+                if st.button("📊 Open Dashboard"):
                     st.session_state.show_analytics = True
 
-                st.markdown("---")
-
-        # --- Help & Reset ---
-        st.markdown("### 📬 Need Help?")
-        st.markdown("[Email HR](mailto:hr@innovim.com)")
-
-        if st.button("🔄 Start Over"):
-            st.session_state.chat_history = []
-            st.rerun()
-
-        st.markdown("---")
-
         # --- Footer ---
-        st.markdown("### 💡 Feedback")
-        st.markdown("[📣 Submit Feedback](https://docs.google.com/forms/d/e/1FAIpQLSc31lOd_KRn9mpffhQNwuthyzh1b3KTSeMGpb12hdJQ5IT_hQ/viewform?usp=dialog)")
-        st.markdown("<div style='font-size: 0.8rem; color: gray;'>🔒 Internal • v1.0 • Updated May 2025</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size: 0.75rem; color: gray; margin-top: 1rem;'> Internal use only • v1.0 • Updated June 2025</div>",
+            unsafe_allow_html=True
+        )
 
 # --- Main Header ---
 st.markdown("<h1 style='text-align: center;'>Innovim HR Chatbot</h1>", unsafe_allow_html=True)
@@ -367,9 +339,11 @@ examples = [
 ]
 
 with st.expander("💡 Try a sample question", expanded=False):
-    for q in examples:
-        if st.button(q, key=f"sample_{q}"):
-            st.session_state["example_question"] = q
+    cols = st.columns(len(examples))
+    for i, q in enumerate(examples):
+        with cols[i]:
+            if st.button(f"👉 {q}", key=f"sample_{i}"):
+                st.session_state["example_question"] = q
 
 # --- Empty State UX ---
 if not st.session_state.chat_history and "example_question" not in st.session_state:
@@ -394,7 +368,8 @@ for entry in st.session_state.chat_history:
         st.markdown(f"<div class='chat-bubble {bubble}'>{entry['content']}</div>", unsafe_allow_html=True)
 
 # --- Handle User Input ---
-user_input = st.chat_input("Ask a question about HR policies, benefits, or employee resources…")
+user_input = st.chat_input("Ask me anything—try 'What's the policy on remote work?'")
+
 
 if "example_question" in st.session_state and not user_input:
     user_input = st.session_state.pop("example_question")
@@ -414,7 +389,11 @@ with st.spinner("Searching policies..."):
         # Step 1: Typing placeholder
         placeholder = st.empty()
         placeholder.markdown(
-            "<div class='chat-bubble bot-bubble'>🤖 <span class='typing-dots'>Typing</span></div>",
+            """
+            <div class='chat-bubble bot-bubble'>
+                🤖 Typing<span class='dots'></span>
+            </div>
+            """,
             unsafe_allow_html=True
         )
 
@@ -540,16 +519,32 @@ with st.spinner("Searching policies..."):
             user_tenure=user_tenure,
             source_docs=source_titles
         )
-        lines = re.split(r'(?<=[.!?])\s+', answer)
-        displayed = ""
+        # --- Refined answer delivery (clean + fast) ---
+        placeholder.markdown(
+            "<div class='chat-bubble bot-bubble'>🤖 Typing...</div>",
+            unsafe_allow_html=True
+        )
 
-        for line in lines:
-            displayed += line + " "
-            placeholder.markdown(
-                f"<div class='chat-bubble bot-bubble'>{displayed.strip()}▌</div>",
-                unsafe_allow_html=True
-            )
-            time.sleep(0.8)
+        time.sleep(0.5)  # Optional realism delay
+
+        placeholder.markdown(
+            f"<div class='chat-bubble bot-bubble'>{answer}</div>",
+            unsafe_allow_html=True
+)
+                # 👇 Add anchor and scroll trigger
+        st.markdown("<div id='bottom'></div>", unsafe_allow_html=True)
+
+        st.markdown(
+            """
+            <script>
+                const bottom = document.getElementById("bottom");
+                if (bottom) {
+                    bottom.scrollIntoView({behavior: "smooth"});
+                }
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
 
         # 👇 Now add the feedback widget AFTER full response is displayed
        # source_note = ""
@@ -568,17 +563,7 @@ with st.spinner("Searching policies..."):
              #   </div>
            #     """
 
-        placeholder.markdown(
-            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>",
-            unsafe_allow_html=True
-        )
-
         feedback_key = f"feedback_{len(st.session_state.chat_history)}"
         feedback = st.radio("Was this helpful?", ["👍", "👎"], key=feedback_key, horizontal=True)
-
-        placeholder.markdown(
-            f"<div class='chat-bubble bot-bubble'>{displayed.strip()}</div>",
-            unsafe_allow_html=True
-        )
 
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
