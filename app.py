@@ -18,7 +18,7 @@ import re
 import os
 
 # --- Page Setup ---
-st.set_page_config(page_title="Innovim HR Chatbot", page_icon="📘", layout="wide")
+st.set_page_config(page_title="InnoAsk", page_icon="📘", layout="wide")
 ensure_log_file_exists()
 
 # Ensure all necessary NLTK resources are available
@@ -270,7 +270,7 @@ if "role" in profile and "tenure" in profile:
     with st.sidebar:
         # --- Branding ---
         st.image("assets/innovimvector.png", use_container_width=True)
-        st.markdown("### Innovim HR Assistant")
+        st.markdown("### InnoAsk HR Assistant")
             # --- User Info Display ---
         profile = st.session_state.get("user_profile", {})
         role = profile.get("role", "Unknown Role")
