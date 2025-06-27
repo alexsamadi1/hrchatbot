@@ -269,7 +269,7 @@ def detect_meta_query(query):
 if "role" in profile and "tenure" in profile:
     with st.sidebar:
         # --- Branding ---
-        st.image("assets/innovimvector.png", use_container_width=True)
+        st.image("assets/innovim_vector.png", use_container_width=True)
         st.markdown("### InnoAsk HR Assistant")
             # --- User Info Display ---
         profile = st.session_state.get("user_profile", {})
