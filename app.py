@@ -328,7 +328,7 @@ if "role" in profile and "tenure" in profile:
         )
 
 # --- Main Header ---
-st.markdown("<h1 style='text-align: center;'>Innovim HR Chatbot</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>InnoAsk Assistant</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>Your go-to assistant for HR policies, benefits, and employee questions.</p>", unsafe_allow_html=True)
 
 # --- Sample Questions ---
