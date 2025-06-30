@@ -520,20 +520,25 @@ with st.spinner("Searching policies..."):
             source_docs=source_titles
         )
         # --- Refined answer delivery (clean + fast) ---
-        placeholder.markdown(
-            "<div class='chat-bubble bot-bubble'>🤖 Typing...</div>",
-            unsafe_allow_html=True
-        )
+# --- Refined answer delivery (streamed animation) ---
+        streamed_response = ""
+        for i, char in enumerate(answer):
+            streamed_response += char
+            cursor = "▌" if i % 2 == 0 else ""  # subtle blinking effect
+            placeholder.markdown(
+                f"<div class='chat-bubble bot-bubble'>{streamed_response}{cursor}</div>",
+                unsafe_allow_html=True
+            )
+            time.sleep(0.008)
 
-        time.sleep(0.5)  # Optional realism delay
-
+        # Final render without cursor
         placeholder.markdown(
             f"<div class='chat-bubble bot-bubble'>{answer}</div>",
             unsafe_allow_html=True
-)
-                # 👇 Add anchor and scroll trigger
-        st.markdown("<div id='bottom'></div>", unsafe_allow_html=True)
+        )
 
+        # Scroll to bottom
+        st.markdown("<div id='bottom'></div>", unsafe_allow_html=True)
         st.markdown(
             """
             <script>
