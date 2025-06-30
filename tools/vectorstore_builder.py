@@ -166,3 +166,12 @@ def rebuild_vectorstore_from_s3():
 
     print(f"✅ Vectorstore saved to {faiss_path}")
     return len(new_hashes), len(chunks)
+
+def get_relevant_chunks(query, vectorstore, k=5):
+    try:
+        chunks = vectorstore.similarity_search(query, k=k)
+        return chunks
+    except Exception as e:
+        print(f"[Vector Search Error] {e}")
+        return []
+

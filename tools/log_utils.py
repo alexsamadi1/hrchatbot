@@ -69,3 +69,24 @@ def log_query_to_csv(
         print("[LOG] Uploaded updated log to S3.")
     except Exception as e:
         print(f"[LOG] Logging failed: {e}")
+
+def log_chat_interaction(
+    user_input,
+    answer,
+    user_profile,
+    source_docs,
+    fallback=False,
+    response_type="direct",
+    feedback=""
+):
+    """Convenience wrapper to simplify logging full chat interaction."""
+    log_query_to_csv(
+        question=user_input,
+        response=answer,
+        fallback=fallback,
+        response_type=response_type,
+        user_role=user_profile.get("role", "Unknown"),
+        user_tenure=user_profile.get("tenure", "Unknown"),
+        source_docs=source_docs,
+        feedback=feedback
+    )

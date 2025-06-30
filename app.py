@@ -3,19 +3,19 @@ import streamlit as st
 from openai import OpenAI
 from tools.embeddings import load_faiss_vectorstore
 from tools.s3_utils import upload_file_to_s3
-from tools.vectorstore_builder import rebuild_vectorstore_from_s3
-from tools.log_utils import ensure_log_file_exists, log_query_to_csv
+from tools.vectorstore_builder import rebuild_vectorstore_from_s3, get_relevant_chunks
+from tools.log_utils import ensure_log_file_exists, log_query_to_csv, log_chat_interaction
 from tools.analytics_dashboard import show_analytics_dashboard
 from tools.filename_generator import generate_smart_filename, extract_text_from_docx
 from io import BytesIO
 from docx import Document
 from pathlib import Path
-from tools.filename_generator import generate_smart_filename, extract_text_from_docx
-import nltk
+from logic.chat_logic import rerank_with_gpt, summarize_fallback, revise_answer_with_gpt, generate_answer, build_messages
 import uuid
 import time
 import re
 import os
+import nltk
 
 # --- Page Setup ---
 st.set_page_config(page_title="InnoAsk", page_icon="📘", layout="wide")
@@ -145,103 +145,9 @@ def get_vectorstore():
 # ✅ Now safe to load vectorstore
 vectorstore = get_vectorstore()
 
+
 # --- Set up OpenAI Client ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
-# --- Rerank Logic ---
-
-def rerank_with_gpt(query, chunks, client):
-    if not chunks:
-        return None
-
-    context_snippets = "\n\n".join([f"Chunk {i+1}:\n{chunk.page_content[:500]}" for i, chunk in enumerate(chunks)])
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant. Based on the user's question and the provided chunks of handbook and onboarding text, "
-                "choose the single chunk that most directly and fully answers the question. Only select a chunk if it clearly answers the question. "
-                "If none of the chunks are clearly relevant, say so."
-            )
-        },
-        {
-            "role": "user",
-            "content": f"User question: {query}\n\nChunks:\n{context_snippets}\n\nWhich chunk best answers the question? Reply with the full content of the best chunk, or say 'none are clearly relevant.'"
-        }
-    ]
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages
-        )
-        content = response.choices[0].message.content.strip()
-
-        if "none are clearly relevant" in content.lower():
-            return summarize_fallback(query, chunks, client)
-        return content
-
-    except Exception:
-        return None
-    
-# --- Summarize Fallback ---
-
-def summarize_fallback(query, chunks, client):
-    fallback_context = "\n\n".join([chunk.page_content[:500] for chunk in chunks[:3]])  # top 3 chunks
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant trained on Innovim's employee handbook and onboarding documents. "
-                "The user asked a question that wasn't answered clearly by a single chunk, but we’ve gathered related information. "
-                "Using these, summarize a helpful, cautious response — and if the answer is uncertain, recommend the user contact HR. "
-                "Never fabricate Innovim policy details."
-            )
-        },
-        {
-            "role": "user",
-            "content": f"User question: {query}\n\nPartial content:\n{fallback_context}\n\nPlease provide the most helpful answer you can from this content."
-        }
-    ]
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages, 
-            stream=True 
-        )
-        return response.choices[0].message.content.strip()
-
-    except Exception:
-        return "I'm not confident I can answer that directly. Please check the handbook or contact HR for guidance."
-    
-# --- Answer Refinement ---
-def revise_answer_with_gpt(question, draft_answer, client):
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant with access to both Innovim's handbook and onboarding documents. "
-                "You are reviewing a draft answer about an HR policy or employee process question. If the answer is vague, incomplete, or confusing, "
-                "you may revise it using general human reasoning and best practices in HR. You may clarify, add logical context, or expand. "
-                "However, you must NOT fabricate Innovim-specific policy details that were not part of the original documents."
-            )
-        },
-        {
-            "role": "user",
-            "content": f"User question: {question}\n\nDraft answer: {draft_answer}\n\nPlease revise this response to make it clearer, more complete, and helpful, while avoiding made-up policy claims."
-        }
-    ]
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages
-        )
-        return response.choices[0].message.content.strip().replace("Revised answer:", "").strip()
-    except Exception:
-        return draft_answer
 
 # --- Chat History ---
 if "chat_history" not in st.session_state:
@@ -398,8 +304,7 @@ with st.spinner("Searching policies..."):
         )
 
         # Step 2: Search top chunks and rerank
-        results = vectorstore.similarity_search_with_score(user_input, k=5)
-        docs = [doc for doc, score in results if score >= 0.3]
+        docs = get_relevant_chunks(user_input, vectorstore, k=5)
         chunks = docs[:3]
 
         # Only add caption if docs exist
@@ -442,15 +347,13 @@ with st.spinner("Searching policies..."):
             user_tenure = profile.get("tenure")
             source_titles = [doc.metadata.get("source", "unknown") for doc in docs]
 
-            log_query_to_csv(
-                question=user_input,
-                response=answer,
+            log_chat_interaction(
+                user_input,
+                answer,
+                profile,
+                source_titles,
                 fallback=True,
-                response_type="summary",
-                user_role=user_role,
-                user_tenure=user_tenure,
-                source_docs=source_titles,
-                feedback=""
+                response_type="summary"
             )
 
             st.stop()
@@ -463,45 +366,22 @@ with st.spinner("Searching policies..."):
             page = doc_metadata.get("page")
             source_citation = f"{source}, page {page}" if page else source
 
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        f"You are Innovim’s professional HR assistant. The user is a {profile['role']} "
-                        f"with {profile['tenure']} at the company.\n\n"
-                       "Your job is to clearly answer the user's HR question using the excerpt provided. "
-                        "If you're unsure, advise the user to contact HR."
-                        "Be helpful and professional, and if unsure, suggest contacting HR."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"User question: {user_input}\n\n"
-                        f"Relevant excerpt (from {source_citation}):\n\n{reranked_chunk}"
-                    )
-                }
-            ]
+        if best_chunk:
+            context = {
+                "text": reranked_chunk,
+                "source": docs[0].metadata.get("source"),
+                "page": docs[0].metadata.get("page")
+            }
+            messages = build_messages(user_input, context, profile, fallback=False)
         else:
-            # Fallback to summarize multiple chunks
-            fallback_context = "\n\n".join([chunk.page_content[:500] for chunk in chunks])
-            messages = [
-                {"role": "system", "content": (
-                    "You are a helpful HR assistant trained on Innovim documents. The question wasn’t answered clearly by any one excerpt, "
-                    "but here are some partial chunks. Summarize a helpful answer based on what you can."
-                    "\nIf unsure, advise the user to contact HR."
-                )},
-                {"role": "user", "content": (
-                    f"User question: {user_input}\n\n"
-                    f"Context snippets:\n{fallback_context}"
-                )}
-            ]
+            fallback_context = "\n\n".join([
+                f"[Source: {doc.metadata.get('source', 'Unknown')}]\n{doc.page_content.strip()}"
+                for doc in docs
+            ])
+            messages = build_messages(user_input, fallback_context, profile, fallback=True)
 
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages
-        )
-        draft_answer = response.choices[0].message.content.strip()
+        # ✅ Correct indentation here
+        draft_answer = generate_answer(messages, client)
 
         # Refine and animate
         answer = revise_answer_with_gpt(user_input, draft_answer, client)
@@ -510,14 +390,13 @@ with st.spinner("Searching policies..."):
         user_role = profile.get("role")
         user_tenure = profile.get("tenure")
         source_titles = [doc.metadata.get("source", "unknown") for doc in docs]
-        log_query_to_csv(
-            question=user_input,
-            response=answer,
+        log_chat_interaction(
+            user_input,
+            answer,
+            profile,
+            source_titles,
             fallback=False,
-            response_type="direct",
-            user_role=user_role,
-            user_tenure=user_tenure,
-            source_docs=source_titles
+            response_type="direct"
         )
         # --- Refined answer delivery (clean + fast) ---
 # --- Refined answer delivery (streamed animation) ---
